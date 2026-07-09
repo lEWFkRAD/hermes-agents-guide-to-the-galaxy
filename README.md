@@ -32,6 +32,7 @@ bookmark it. Config is via env vars (all optional):
 | `DIARY_HOST` | `0.0.0.0` | Bind address |
 | `HERMES_ENDPOINT` | `http://127.0.0.1:8642/v1/chat/completions` | Upstream gateway |
 | `DIARY_TEXT_MODEL` | `hermes-agent` | Model requested upstream |
+| `DIARY_AUTH_TOKEN` | *(unset)* | If set, `/api/*` requires this secret. Open the diary once with `?k=<token>` — it's saved and sent on every call. Unset = open (LAN default). |
 
 ## Features
 
@@ -77,5 +78,7 @@ bookmark it. Config is via env vars (all optional):
 
 - Entries and handwriting images live under `data/` and are **git-ignored** —
   personal content never enters the repo.
-- The bridge listens on the LAN with no auth. Fine for a home network; add a
-  shared-secret header before exposing it beyond the LAN.
+- The bridge listens on the LAN with no auth by default. Fine for a home network.
+  To lock it down, set `DIARY_AUTH_TOKEN` and open the diary with `?k=<token>` —
+  the API then rejects anything without the secret (401). Required before exposing
+  it beyond the LAN or before wiring it to tool-enabled agents that reach real data.

@@ -355,7 +355,7 @@ canvas {
 .pageCtl button {
   min-width: 52px;
   min-height: 48px;
-  background: rgba(251, 250, 244, 0.92);
+  background: var(--soft);
 }
 
 .zoomCtl {
@@ -373,8 +373,11 @@ canvas {
   min-height: 46px;
   padding: 0;
   font-size: 20px;
-  background: rgba(251, 250, 244, 0.92);
+  color: var(--ink);
+  background: var(--soft);
 }
+
+.zoomCtl button svg { display: block; margin: 0 auto; }
 
 .zoomCtl button#resetView {
   font-size: 14px;

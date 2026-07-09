@@ -131,6 +131,21 @@ const kindleAdapterUrl = process.env.KINDLE_ADAPTER_URL || "http://127.0.0.1:879
 const kindleIngestToken = process.env.KINDLE_INGEST_TOKEN || "";
 const kindleUser = process.env.KINDLE_USER || "kindle";
 
+// Optional shared secret. If DIARY_AUTH_TOKEN is set, /api/* requires it (via the
+// x-diary-auth header or a ?k= query param). Unset = open, exactly as before.
+// The page is served openly; only the API (which reaches models + your data) is gated.
+const authToken = process.env.DIARY_AUTH_TOKEN || "";
+
+function authOk(req) {
+  if (!authToken) return true;
+  if ((req.headers["x-diary-auth"] || "") === authToken) return true;
+  try {
+    const u = new URL(req.url, "http://diary.local");
+    if (u.searchParams.get("k") === authToken) return true;
+  } catch {}
+  return false;
+}
+
 async function loadHermesToken() {
   if (process.env.HERMES_TOKEN || process.env.HERMES_API_KEY || process.env.API_SERVER_KEY) {
     return process.env.HERMES_TOKEN || process.env.HERMES_API_KEY || process.env.API_SERVER_KEY;
@@ -704,6 +719,12 @@ const server = http.createServer(async (req, res) => {
     send(res, 204, "");
     return;
   }
+  // Gate the API (models + your data) when a shared secret is configured.
+  // /api/config stays open so the page can learn whether auth is required.
+  if (req.url.startsWith("/api/") && req.url.indexOf("/api/config") !== 0 && !authOk(req)) {
+    send(res, 401, JSON.stringify({ ok: false, error: "unauthorized — open the diary with your ?k= link" }));
+    return;
+  }
   if (req.url === "/api/config") {
     send(res, 200, JSON.stringify({
       defaultTextEndpoint,
@@ -713,7 +734,8 @@ const server = http.createServer(async (req, res) => {
       localTextEndpoint,
       localTextModel,
       hermesEndpoint,
-      hasHermesToken: Boolean(hermesToken)
+      hasHermesToken: Boolean(hermesToken),
+      authRequired: Boolean(authToken)
     }));
     return;
   }

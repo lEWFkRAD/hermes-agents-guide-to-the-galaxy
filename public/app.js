@@ -1,4 +1,19 @@
 (function () {
+  // --- Optional shared-secret auth ----------------------------------------
+  // If the bridge sets DIARY_AUTH_TOKEN, open the diary with ?k=<token> once;
+  // we stash it and send it on every API call. Harmless when no token is set.
+  var authTok = "";
+  (function () {
+    var m = (window.location.search || "").match(/[?&]k=([^&#]+)/);
+    try {
+      if (m) { authTok = decodeURIComponent(m[1]); window.localStorage.setItem("diaryAuth", authTok); }
+      else { authTok = window.localStorage.getItem("diaryAuth") || ""; }
+    } catch (e) {}
+  }());
+  function setAuth(xhr) {
+    if (authTok) { try { xhr.setRequestHeader("x-diary-auth", authTok); } catch (e) {} }
+  }
+
   // --- Client diagnostics -------------------------------------------------
   // The Kindle browser is a black box from the server side. Any script error
   // gets shown on-screen AND posted back so it lands in the server log.
@@ -20,6 +35,7 @@
       var xhr = new XMLHttpRequest();
       xhr.open("POST", "/api/clientlog", true);
       xhr.setRequestHeader("content-type", "application/json");
+      setAuth(xhr);
       xhr.send(JSON.stringify({ where: where, message: String(message), ua: navigator.userAgent }));
     } catch (e) {}
   }
@@ -879,6 +895,7 @@
     }
     xhr.open(method, url, true);
     xhr.setRequestHeader("content-type", "application/json");
+      setAuth(xhr);
     if (timeoutMs) xhr.timeout = timeoutMs;
     xhr.onreadystatechange = function () {
       if (xhr.readyState !== 4) return;
@@ -916,6 +933,7 @@
       var x = new XMLHttpRequest();
       x.open("POST", "/api/warm", true);
       x.setRequestHeader("content-type", "application/json");
+      setAuth(x);
       x.send("{}");
     } catch (e) {}
   }
@@ -1367,6 +1385,7 @@
     var xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/send", true);
     xhr.setRequestHeader("content-type", "application/json");
+      setAuth(xhr);
     xhr.timeout = REQUEST_TIMEOUT_MS;
     xhr.onreadystatechange = function () {
       if (gen !== revealGen) return;
