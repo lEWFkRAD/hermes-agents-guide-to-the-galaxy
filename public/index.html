@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Hermes Agents Guide to the Galaxy</title>
+    <link rel="stylesheet" href="/styles.css?v=12">
+  </head>
+  <body>
+    <main class="diary">
+      <section class="page">
+        <header class="bar">
+          <div class="brand">
+            <h1>Hermes Agents Guide<span class="sub"> to the Galaxy</span></h1>
+            <p id="status">Ready</p>
+          </div>
+          <div class="actions">
+            <button id="historyBtn" type="button">History</button>
+            <button id="newBtn" type="button">New</button>
+            <button id="sendBtn" type="button">Send</button>
+          </div>
+        </header>
+        <div class="tools">
+          <label for="strokeWidth">Ink</label>
+          <input id="strokeWidth" type="range" min="2" max="8" step="0.5" value="3.5">
+          <button id="undoBtn" type="button" class="toolBtn">Undo</button>
+          <button id="clearBtn" type="button" class="toolBtn">Clear</button>
+        </div>
+        <details class="options">
+          <summary>Options</summary>
+          <div class="optionsGrid">
+            <button id="modeBtn" type="button" class="toolBtn">Mode: Split</button>
+            <button id="rotateBtn" type="button" class="toolBtn">Rotate</button>
+            <label class="opt"><input id="fastInk" type="checkbox" checked> Fast ink</label>
+            <label class="opt"><input id="streamOn" type="checkbox" checked> Stream</label>
+          </div>
+        </details>
+
+        <section id="historyPanel" class="historyPanel" hidden>
+          <div class="panelBar">
+            <h2>Past entries</h2>
+            <button id="historyClose" type="button">Close</button>
+          </div>
+          <div id="historyList"><p>Loading…</p></div>
+        </section>
+
+        <p id="sessionLabel" class="sessionLabel"></p>
+
+        <div class="split">
+          <div class="writeCol">
+            <div class="canvasWrap">
+              <canvas id="ink" aria-label="Ink canvas"></canvas>
+              <div id="pageText" class="pageText" aria-live="polite"></div>
+              <div class="pageCtl">
+                <button id="pgUp" type="button">&#9650;</button>
+                <button id="pgDn" type="button">&#9660;</button>
+              </div>
+              <div id="emptyHint">Write here, then tap Send.</div>
+            </div>
+            <details class="typedBox">
+              <summary>Keyboard</summary>
+              <textarea id="typed" spellcheck="true" placeholder="Optional typed text. Use this if the browser does not pass pen strokes cleanly."></textarea>
+            </details>
+          </div>
+          <div class="readCol">
+            <div class="readBar">
+              <span class="readTitle">Hermes</span>
+              <div class="readBtns">
+                <button id="pgUp2" type="button">&#9650;</button>
+                <button id="pgDn2" type="button">&#9660;</button>
+              </div>
+            </div>
+            <article id="reply" class="reply" aria-live="polite"><p>Hermes replies will appear here.</p></article>
+          </div>
+        </div>
+
+        <details class="settings">
+          <summary>Connection</summary>
+          <label>
+            Target
+            <select id="target">
+              <option value="auto">Hermes Agent</option>
+              <option value="hermes">Hermes gateway</option>
+              <option value="local">Local fallback</option>
+              <option value="custom">Custom OpenAI-compatible endpoint</option>
+            </select>
+          </label>
+          <label>
+            Endpoint
+            <input id="endpoint" autocomplete="off" placeholder="http://127.0.0.1:8642/v1/chat/completions">
+          </label>
+          <label>
+            Model
+            <input id="model" autocomplete="off" placeholder="gpt-oss-20b or qwen3vl-8b">
+          </label>
+          <label>
+            Token
+            <input id="token" autocomplete="off" type="password" placeholder="Optional bearer token">
+          </label>
+        </details>
+      </section>
+    </main>
+    <script src="/app.js?v=12"></script>
+  </body>
+</html>

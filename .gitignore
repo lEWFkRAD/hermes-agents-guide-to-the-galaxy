@@ -1,0 +1,8 @@
+# Personal diary content — entries, handwriting images, archives. Never commit.
+data/
+
+# Runtime logs
+*.log
+
+# Dev/test artifacts
+test-*.png
