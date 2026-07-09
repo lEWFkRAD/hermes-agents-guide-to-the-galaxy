@@ -2,13 +2,15 @@ import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { WorkspaceStore } from "./lib/workspaces.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
-const dataDir = path.join(__dirname, "data");
+const dataDir = process.env.DIARY_DATA_DIR || path.join(__dirname, "data");
 const sessionsFile = path.join(dataDir, "sessions.json");
 const imagesDir = path.join(dataDir, "images");
 const archiveDir = path.join(dataDir, "archive");
+const workspaceStore = new WorkspaceStore(dataDir);
 
 let sessions = [];
 let imageSeq = 0;
@@ -194,7 +196,7 @@ function send(res, status, body, type = "application/json; charset=utf-8") {
     "cache-control": "no-store",
     "access-control-allow-origin": "*",
     "access-control-allow-methods": "GET,POST,OPTIONS",
-    "access-control-allow-headers": "content-type,authorization"
+    "access-control-allow-headers": "content-type,authorization,x-diary-auth"
   });
   res.end(body);
 }
@@ -384,6 +386,145 @@ async function callKindleChannel({ text, chatId }) {
   }
   if (!response.ok) throw new Error(json?.error || `Channel error ${response.status}`);
   return { text: json.reply || "" };
+}
+
+function proposalPrompt(workspace, proposal, artifactSource) {
+  const annotations = workspace.annotations
+    .filter(item => item.artifactId === proposal.artifactId)
+    .map(item => ({
+      id: item.id,
+      intent: item.intent,
+      transcription: item.transcription,
+      anchor: item.anchor
+    }));
+  return [
+    "You are reviewing an annotated artifact from a Kindle Scribe workspace.",
+    "Analyze the user's instruction and annotations. Do not modify files or take external actions.",
+    "Return JSON only with this shape:",
+    '{"summary":"short review","changes":[{"kind":"comment|html-edit|task","target":"anchor or selector","description":"specific proposed change","replacement":"optional replacement text"}]}',
+    `Workspace mode: ${workspace.mode}`,
+    `Artifact: ${proposal.artifactId}`,
+    `Instruction: ${proposal.instruction}`,
+    `Annotations: ${JSON.stringify(annotations)}`,
+    artifactSource ? `Artifact source:\n${artifactSource.slice(0, 30000)}` : "The artifact is an image; rely on the annotation text and anchors provided."
+  ].join("\n\n");
+}
+
+function parseProposalReply(text) {
+  const raw = String(text || "").trim();
+  const unfenced = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  const candidates = [unfenced];
+  const firstBrace = unfenced.indexOf("{");
+  const lastBrace = unfenced.lastIndexOf("}");
+  if (firstBrace >= 0 && lastBrace > firstBrace) candidates.push(unfenced.slice(firstBrace, lastBrace + 1));
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      return {
+        summary: String(parsed.summary || "Proposal ready"),
+        changes: Array.isArray(parsed.changes) ? parsed.changes : []
+      };
+    } catch {
+      /* try the next candidate */
+    }
+  }
+  return { summary: raw || "Hermes returned an empty proposal", changes: [] };
+}
+
+async function handleWorkspaceApi(req, res) {
+  try {
+    const url = new URL(req.url, "http://diary.local");
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (parts.length === 2) {
+      if (req.method === "GET") {
+        send(res, 200, JSON.stringify({ ok: true, workspaces: workspaceStore.list() }));
+        return;
+      }
+      if (req.method === "POST") {
+        const workspace = await workspaceStore.create(JSON.parse(await readBody(req) || "{}"));
+        send(res, 201, JSON.stringify({ ok: true, workspace }));
+        return;
+      }
+    }
+
+    const workspaceId = parts[2];
+    const workspace = workspaceStore.get(workspaceId);
+    if (!workspace) {
+      send(res, 404, JSON.stringify({ ok: false, error: "Workspace not found" }));
+      return;
+    }
+    if (parts.length === 3 && req.method === "GET") {
+      send(res, 200, JSON.stringify({ ok: true, workspace }));
+      return;
+    }
+
+    const action = parts[3];
+    const body = req.method === "POST" ? JSON.parse(await readBody(req) || "{}") : {};
+    if (action === "artifacts" && req.method === "POST") {
+      const artifact = await workspaceStore.addArtifact(workspaceId, body);
+      send(res, 201, JSON.stringify({ ok: true, artifact, workspace: workspaceStore.get(workspaceId) }));
+      return;
+    }
+    if (action === "annotations" && req.method === "POST") {
+      const annotation = await workspaceStore.addAnnotation(workspaceId, body);
+      send(res, 201, JSON.stringify({ ok: true, annotation, workspace: workspaceStore.get(workspaceId) }));
+      return;
+    }
+    if (action === "proposals" && parts.length === 4 && req.method === "POST") {
+      const proposal = await workspaceStore.createProposal(workspaceId, body);
+      send(res, 201, JSON.stringify({ ok: true, proposal, workspace: workspaceStore.get(workspaceId) }));
+      return;
+    }
+    if (action === "proposals" && parts[5] === "analyze" && req.method === "POST") {
+      const proposalId = parts[4];
+      const rawWorkspace = workspaceStore.raw(workspaceId);
+      const proposal = rawWorkspace.proposals.find(item => item.id === proposalId);
+      if (!proposal) throw new Error("Proposal not found");
+      const found = workspaceStore.findArtifact(proposal.artifactId);
+      let artifactSource = "";
+      if (found?.artifact.type === "html") {
+        artifactSource = (await fs.readFile(found.artifact.storagePath, "utf8"));
+      }
+      try {
+        const result = await callKindleChannel({
+          text: proposalPrompt(rawWorkspace, proposal, artifactSource),
+          chatId: `workspace-${workspaceId}-${proposalId}`
+        });
+        const completed = await workspaceStore.completeProposal(workspaceId, proposalId, parseProposalReply(result.text));
+        send(res, 200, JSON.stringify({ ok: true, proposal: completed, workspace: workspaceStore.get(workspaceId) }));
+      } catch (error) {
+        const failed = await workspaceStore.completeProposal(workspaceId, proposalId, { error: error.message });
+        send(res, 502, JSON.stringify({ ok: false, error: error.message, proposal: failed }));
+      }
+      return;
+    }
+    send(res, 404, JSON.stringify({ ok: false, error: "Workspace route not found" }));
+  } catch (error) {
+    send(res, 400, JSON.stringify({ ok: false, error: error.message }));
+  }
+}
+
+async function serveArtifact(req, res) {
+  const url = new URL(req.url, "http://diary.local");
+  const match = /^\/api\/artifacts\/([^/]+)\/content$/.exec(url.pathname);
+  if (!match) {
+    send(res, 404, JSON.stringify({ ok: false, error: "Artifact not found" }));
+    return;
+  }
+  const result = await workspaceStore.readArtifact(match[1]);
+  if (!result) {
+    send(res, 404, JSON.stringify({ ok: false, error: "Artifact not found" }));
+    return;
+  }
+  res.writeHead(200, {
+    "content-type": result.artifact.contentType,
+    "cache-control": "no-store",
+    "content-security-policy": result.artifact.type === "html"
+      ? "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:"
+      : "default-src 'none'",
+    "x-content-type-options": "nosniff"
+  });
+  res.end(result.buffer);
 }
 
 async function handleSend(req, res) {
@@ -775,6 +916,14 @@ const server = http.createServer(async (req, res) => {
     await handleSend(req, res);
     return;
   }
+  if (req.url.startsWith("/api/workspaces")) {
+    await handleWorkspaceApi(req, res);
+    return;
+  }
+  if (req.url.startsWith("/api/artifacts/")) {
+    await serveArtifact(req, res);
+    return;
+  }
   if (req.url.startsWith("/api/sessions")) {
     await handleSessions(req, res);
     return;
@@ -803,6 +952,7 @@ const server = http.createServer(async (req, res) => {
 hermesToken = await loadHermesToken();
 await loadSessions();
 await migrateInlineImages();
+await workspaceStore.init();
 
 server.listen(port, host, () => {
   console.log(`Hermes Agents Guide to the Galaxy listening on http://${host}:${port}`);

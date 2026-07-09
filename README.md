@@ -49,6 +49,11 @@ bookmark it. Config is via env vars (all optional):
   hot by the time you hit Send, avoiding cold-start latency.
 - **Image retention** — handwriting is stored as files (not inline), and an
   optional nightly job archives images older than 7 days.
+- **Artifact workspaces (foundation release)** — import an image or sanitized
+  HTML page, draw vector annotations over it, label the annotation intent, and
+  ask the real Hermes Kindle channel for a structured change proposal. Workspace
+  state, artifact revisions, annotations, proposals, and audit events persist
+  locally under `data/workspaces/`.
 
 ## Endpoints
 
@@ -61,6 +66,13 @@ bookmark it. Config is via env vars (all optional):
 | `POST /api/warm` | Wake the model (fire-and-forget) |
 | `POST /api/maintenance/archive?days=N` | Archive images older than N days |
 | `GET /img/:name` | Serve a stored handwriting image (hot dir, then archive) |
+| `GET/POST /api/workspaces` | List or create artifact workspaces |
+| `GET /api/workspaces/:id` | Load a workspace with artifacts and proposals |
+| `POST /api/workspaces/:id/artifacts` | Import a sanitized HTML or image artifact |
+| `POST /api/workspaces/:id/annotations` | Save normalized vector ink and its intent |
+| `POST /api/workspaces/:id/proposals` | Create a revision-bound proposal |
+| `POST /api/workspaces/:id/proposals/:proposalId/analyze` | Ask Hermes for structured proposed changes |
+| `GET /api/artifacts/:id/content` | Render artifact content with restrictive security headers |
 
 ## Always-on setup (Windows)
 

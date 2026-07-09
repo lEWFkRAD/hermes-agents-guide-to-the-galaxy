@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Hermes Agents Guide to the Galaxy</title>
-    <link rel="stylesheet" href="/styles.css?v=20">
+    <link rel="stylesheet" href="/styles.css?v=21">
   </head>
   <body>
     <main class="diary">
@@ -37,6 +37,71 @@
             <label class="opt"><input id="streamOn" type="checkbox" checked> Stream</label>
             <label class="opt"><input id="darkOn" type="checkbox"> Dark mode</label>
           </div>
+        </details>
+
+        <details id="workspaceLab" class="workspaceLab">
+          <summary>Artifact workspace</summary>
+          <p class="workspaceIntro">Annotate an image or HTML page, then ask Hermes for a structured change proposal.</p>
+          <div class="workspaceControls">
+            <label>
+              Mode
+              <select id="workspaceMode">
+                <option value="review">Review</option>
+                <option value="meeting">Meeting</option>
+                <option value="brainstorm">Brainstorm</option>
+                <option value="design">Design</option>
+              </select>
+            </label>
+            <label class="artifactPicker">
+              Artifact
+              <input id="artifactFile" type="file" accept="image/png,image/jpeg,image/webp,text/html,.html,.htm">
+            </label>
+            <button id="newWorkspaceBtn" type="button">New workspace</button>
+          </div>
+          <p id="workspaceStatus" class="workspaceStatus">Choose an image or HTML file to begin.</p>
+
+          <section id="artifactWorkbench" class="artifactWorkbench" hidden>
+            <div class="artifactBar">
+              <div>
+                <strong id="artifactName">Artifact</strong>
+                <span id="artifactRevision"></span>
+              </div>
+              <button id="clearAnnotationBtn" type="button">Clear ink</button>
+            </div>
+            <div id="artifactSurface" class="artifactSurface">
+              <iframe id="artifactFrame" title="HTML artifact preview" sandbox=""></iframe>
+              <img id="artifactImage" alt="Artifact preview">
+              <canvas id="annotationInk" aria-label="Artifact annotation canvas"></canvas>
+            </div>
+            <div class="annotationControls">
+              <label>
+                Intent
+                <select id="annotationIntent">
+                  <option value="edit">Edit</option>
+                  <option value="comment">Comment</option>
+                  <option value="question">Question</option>
+                  <option value="task">Task</option>
+                </select>
+              </label>
+              <label class="annotationTextLabel">
+                What does this ink mean?
+                <input id="annotationText" type="text" placeholder="Move this section left, fix this number, turn this into a task…">
+              </label>
+              <button id="saveAnnotationBtn" type="button">Save annotation</button>
+            </div>
+            <div class="proposalControls">
+              <label>
+                Ask Hermes
+                <textarea id="proposalInstruction" placeholder="Review my annotations and propose the exact changes."></textarea>
+              </label>
+              <button id="analyzeArtifactBtn" type="button">Analyze annotations</button>
+            </div>
+            <section id="proposalReview" class="proposalReview" hidden aria-live="polite">
+              <h2>Proposed changes</h2>
+              <div id="proposalSummary"></div>
+              <ol id="proposalChanges"></ol>
+            </section>
+          </section>
         </details>
 
         <section id="historyPanel" class="historyPanel" hidden>
@@ -109,6 +174,7 @@
         </details>
       </section>
     </main>
-    <script src="/app.js?v=20"></script>
+    <script src="/app.js?v=21"></script>
+    <script src="/workspace.js?v=1"></script>
   </body>
 </html>
