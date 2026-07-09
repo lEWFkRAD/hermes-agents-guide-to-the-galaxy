@@ -6,3 +6,13 @@ data/
 
 # Dev/test artifacts
 test-*.png
+
+# Design docs that discuss firm-data routing — keep OUT of the public repo
+SPEC-*.md
+
+# Hermes-core Kindle platform adapter draft — staging, not part of the public diary
+kindle-plugin/
+
+# Channel secret + env — NEVER commit
+.kindle-token
+kindle-env.ps1

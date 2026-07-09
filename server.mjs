@@ -123,6 +123,14 @@ const localTextEndpoint = process.env.DIARY_LOCAL_TEXT_ENDPOINT || "http://127.0
 const localTextModel = process.env.DIARY_LOCAL_TEXT_MODEL || "gpt-oss-20b";
 let hermesToken = "";
 
+// Firm-agent CHANNEL: the "Hermes firm agent" target routes here — to the Kindle
+// gateway platform adapter (the real agent with MoA + tools), not a bare
+// completion. Only reachable once the Hermes gateway with the `kindle` platform
+// is running (interactive dev session). Token/URL from env; nothing secret in git.
+const kindleAdapterUrl = process.env.KINDLE_ADAPTER_URL || "http://127.0.0.1:8793/ingest";
+const kindleIngestToken = process.env.KINDLE_INGEST_TOKEN || "";
+const kindleUser = process.env.KINDLE_USER || "kindle";
+
 async function loadHermesToken() {
   if (process.env.HERMES_TOKEN || process.env.HERMES_API_KEY || process.env.API_SERVER_KEY) {
     return process.env.HERMES_TOKEN || process.env.HERMES_API_KEY || process.env.API_SERVER_KEY;
@@ -204,9 +212,18 @@ function choiceText(json) {
 
 function buildMessages({ text, imageDataUrl, history = [] }) {
   const system = [
-    "You are Hermes inside a Kindle Scribe diary.",
-    "Be concise, useful, and formatted for an e-ink screen.",
-    "Use simple Markdown. No giant code blocks unless asked.",
+    "You are Hermes, a thinking partner inside a Kindle Scribe notebook.",
+    "IMPORTANT: In this notebook you are a plain language model with NO tools.",
+    "You have NO database, NO file access, NO web, NO MCP, and NO ability to look",
+    "anything up or run any tool here. Do not claim otherwise.",
+    "If asked to pull, look up, verify, fetch, search, or extract real data (records,",
+    "files, numbers, accounts), do NOT pretend to search and do NOT invent results.",
+    "In one or two sentences, say the notebook can't access data and the task needs a",
+    "tool-enabled agent, then offer to help reason it through from what the user tells you.",
+    "NEVER fabricate names, IDs, amounts, or 'verified' lists. If you don't know, say so.",
+    "Answer the user directly as Hermes. Never mention 'reference responses', other models,",
+    "drafts, or your internal process — the user only sees your final answer.",
+    "Be concise and formatted for an e-ink screen. Use simple Markdown, no giant code blocks.",
     "When the user sends a handwritten image, begin your reply with one line:",
     "You wrote: \"<short transcription of the handwriting>\"",
     "then respond on the following lines."
@@ -324,6 +341,36 @@ async function callChatStream({ endpoint, model, token, text, imageDataUrl, hist
   return { text: full };
 }
 
+// Firm-agent CHANNEL call: hand the note to the Kindle gateway platform adapter,
+// which runs the real agent (MoA + tools) and returns its reply. Non-streaming v1.
+async function callKindleChannel({ text, chatId }) {
+  let response;
+  try {
+    response = await fetch(kindleAdapterUrl, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(kindleIngestToken ? { "x-kindle-token": kindleIngestToken } : {})
+      },
+      body: JSON.stringify({ text, user: kindleUser, chat_id: chatId })
+    });
+  } catch {
+    throw new Error(
+      "Firm agent channel isn't running. Start the Hermes gateway with the kindle " +
+      "platform, then try the firm agent again."
+    );
+  }
+  const raw = await response.text();
+  let json;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    throw new Error(`Channel returned ${response.status}: ${raw.slice(0, 300)}`);
+  }
+  if (!response.ok) throw new Error(json?.error || `Channel error ${response.status}`);
+  return { text: json.reply || "" };
+}
+
 async function handleSend(req, res) {
   try {
     const body = JSON.parse(await readBody(req));
@@ -337,20 +384,18 @@ async function handleSend(req, res) {
     let mode = target;
 
     if (!endpoint) {
-      if (target === "local") {
-        endpoint = hasInk ? defaultVisionEndpoint : localTextEndpoint;
-        model ||= hasInk ? defaultVisionModel : localTextModel;
-        mode = hasInk ? "local-vision" : "local-text";
-      } else if (target === "hermes" || target === "auto") {
+      if (target === "hermes") {
+        // Explicit opt-in to the firm MoA agent persona.
         endpoint = hermesEndpoint;
         token ||= hermesToken;
         model ||= defaultTextModel;
         mode = "hermes";
       } else {
-        endpoint = hermesEndpoint;
-        token ||= hermesToken;
-        model ||= defaultTextModel;
-        mode = "hermes";
+        // Default: a plain assistant. Text goes to the local text model, ink to
+        // the local vision model. No firm-agent persona, no tool delusions.
+        endpoint = hasInk ? defaultVisionEndpoint : localTextEndpoint;
+        model ||= hasInk ? defaultVisionModel : localTextModel;
+        mode = hasInk ? "vision" : "plain";
       }
     }
 
@@ -391,6 +436,74 @@ async function handleSend(req, res) {
       });
     }
 
+    // ---- Firm-agent CHANNEL: route to the real Hermes agent via the adapter --
+    if (target === "hermes") {
+      const startedCh = Date.now();
+      // The channel takes text; transcribe handwriting via the vision model first.
+      let noteText = body.text || "";
+      if (hasInk) {
+        try {
+          const vis = await callChat({
+            endpoint: defaultVisionEndpoint,
+            model: defaultVisionModel,
+            token: "",
+            text: "Transcribe the handwriting in this image. Output only the transcription.",
+            imageDataUrl: body.imageDataUrl,
+            mode: "vision"
+          });
+          noteText = (noteText ? noteText + "\n\n" : "") + (vis.text || "");
+        } catch {
+          /* fall through with whatever text we have */
+        }
+      }
+
+      const wantStream = !!body.stream;
+      if (wantStream) {
+        res.writeHead(200, {
+          "content-type": "text/plain; charset=utf-8",
+          "cache-control": "no-store",
+          "access-control-allow-origin": "*"
+        });
+        res.write(JSON.stringify({ sessionId: session.id }) + "\n");
+      }
+
+      let result;
+      try {
+        result = await callKindleChannel({ text: noteText, chatId: session.id });
+      } catch (error) {
+        logSend({ kind: "error", target: "hermes", channel: true, error: error.message });
+        if (wantStream) {
+          res.write(RS + JSON.stringify({ error: error.message }));
+          res.end();
+        } else {
+          send(res, 502, JSON.stringify({ ok: false, error: error.message }));
+        }
+        return;
+      }
+
+      if (!result.text || !result.text.trim()) {
+        const emsg = "The firm agent returned an empty reply. Tap Send to try again.";
+        if (wantStream) { res.write(RS + JSON.stringify({ error: emsg })); res.end(); }
+        else send(res, 502, JSON.stringify({ ok: false, error: emsg }));
+        return;
+      }
+
+      await commitSession(result.text);
+      logSend({
+        kind: "send", target: "hermes", channel: true, sessionId: session.id,
+        textChars: noteText.length, imageBytes, responseChars: result.text.length,
+        durationMs: Date.now() - startedCh
+      });
+      if (wantStream) {
+        res.write(result.text);
+        res.write(RS + JSON.stringify({ title: session.title }));
+        res.end();
+      } else {
+        send(res, 200, JSON.stringify({ ok: true, text: result.text, sessionId: session.id, title: session.title }));
+      }
+      return;
+    }
+
     // ---- Streaming path: relay tokens live to the client -------------------
     if (body.stream) {
       const startedStream = Date.now();
@@ -418,6 +531,15 @@ async function handleSend(req, res) {
       } catch (error) {
         logSend({ kind: "error", streaming: true, error: error.message });
         res.write("" + JSON.stringify({ error: error.message }));
+        res.end();
+        return;
+      }
+
+      // An empty reply (transient gateway hiccup) must not be committed or
+      // shown as a blank page — surface it as a retryable error instead.
+      if (!result.text || !result.text.trim()) {
+        logSend({ kind: "error", streaming: true, error: "empty reply", durationMs: Date.now() - startedStream });
+        res.write(RS + JSON.stringify({ error: "Hermes returned an empty reply. Tap Send to try again." }));
         res.end();
         return;
       }
@@ -453,6 +575,13 @@ async function handleSend(req, res) {
       history,
       sessionKey: "kindle-scribe-diary-" + session.id
     });
+
+    // Don't commit or return an empty reply — surface it as retryable.
+    if (!result.text || !result.text.trim()) {
+      logSend({ kind: "error", error: "empty reply", durationMs: Date.now() - startedAt });
+      send(res, 502, JSON.stringify({ ok: false, error: "Hermes returned an empty reply. Tap Send to try again." }));
+      return;
+    }
 
     // The call succeeded — now it's safe to register a brand-new session.
     if (isNewSession) sessions.unshift(session);

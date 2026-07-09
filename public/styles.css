@@ -5,6 +5,17 @@
   --line: #d8d2c3;
   --soft: #eee9dc;
   --accent: #1f5d50;
+  --muted: #6b6455;
+}
+
+body.dark {
+  color-scheme: dark;
+  --ink: #e9e7e0;
+  --paper: #15140f;
+  --line: #3b382f;
+  --soft: #23211a;
+  --accent: #7bb9a9;
+  --muted: #9a9384;
 }
 
 * {
@@ -226,7 +237,7 @@ canvas {
   font-size: 24px;
   line-height: 36px;
   font-style: italic;
-  color: #1c1a14;
+  color: var(--ink);
 }
 
 .pageText p,
@@ -247,6 +258,90 @@ canvas {
   padding-left: 26px;
 }
 
+/* ---- Rich content in the output panes (reply + on-page) --------------- */
+.reply h1, .reply h2, .reply h3, .reply h4,
+.pageText h1, .pageText h2, .pageText h3, .pageText h4 {
+  margin: 0.4em 0 0.2em;
+  line-height: 1.15;
+  font-style: normal;
+}
+.reply h1, .pageText h1 { font-size: 1.5em; }
+.reply h2, .pageText h2 { font-size: 1.3em; }
+.reply h3, .pageText h3 { font-size: 1.15em; }
+.reply h4, .pageText h4 { font-size: 1.05em; }
+
+.reply strong, .pageText strong { font-weight: 700; font-style: normal; }
+.reply em, .pageText em { font-style: italic; }
+
+.reply a, .pageText a { color: var(--accent); text-decoration: underline; }
+
+.reply code, .pageText code {
+  font-family: Consolas, "DejaVu Sans Mono", monospace;
+  font-size: 0.88em;
+  background: var(--soft);
+  padding: 0 3px;
+  border-radius: 3px;
+}
+
+.reply pre, .pageText pre {
+  font-style: normal;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+.reply pre code, .pageText pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.85em;
+  white-space: pre;
+}
+
+.reply blockquote, .pageText blockquote {
+  margin: 0.5em 0;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--line);
+  color: var(--muted);
+}
+
+.reply hr, .pageText hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 0.7em 0;
+}
+
+.reply table, .pageText table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.5em 0;
+  font-style: normal;
+  font-size: 0.92em;
+}
+.reply th, .reply td, .pageText th, .pageText td {
+  border: 1px solid var(--line);
+  padding: 4px 8px;
+  text-align: left;
+}
+.reply th, .pageText th { background: var(--soft); font-weight: 700; }
+
+/* Artifacts: model-emitted HTML/SVG, framed and set apart from prose. */
+.reply .artifact, .pageText .artifact {
+  font-style: normal;
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+  padding: 10px;
+  margin: 0.6em 0;
+  background: var(--paper);
+  overflow-x: auto;
+}
+.reply .artifact svg, .pageText .artifact svg,
+.reply .artifact img, .pageText .artifact img {
+  max-width: 100%;
+  height: auto;
+}
+
 .pageCtl {
   position: absolute;
   right: 8px;
@@ -261,6 +356,33 @@ canvas {
   min-width: 52px;
   min-height: 48px;
   background: rgba(251, 250, 244, 0.92);
+}
+
+.zoomCtl {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 3;
+}
+
+.zoomCtl button {
+  min-width: 48px;
+  min-height: 46px;
+  padding: 0;
+  font-size: 20px;
+  background: rgba(251, 250, 244, 0.92);
+}
+
+.zoomCtl button#resetView {
+  font-size: 14px;
+}
+
+.zoomCtl button.active {
+  background: var(--ink);
+  color: var(--paper);
 }
 
 .typedBox {
@@ -376,6 +498,11 @@ textarea {
   min-height: 18px;
   font-size: 14px;
   color: #6b6455;
+}
+
+.sessionLabel .nudge {
+  font-style: italic;
+  color: #8a5a20;
 }
 
 .turn {

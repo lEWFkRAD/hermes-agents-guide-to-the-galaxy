@@ -59,9 +59,20 @@
   var pgUp2 = document.getElementById("pgUp2");
   var pgDn2 = document.getElementById("pgDn2");
   var reply = document.getElementById("reply");
+  var zoomInBtn = document.getElementById("zoomIn");
+  var zoomOutBtn = document.getElementById("zoomOut");
+  var panBtn = document.getElementById("panBtn");
+  var resetViewBtn = document.getElementById("resetView");
 
   var landscape = false;
   var mode = "split"; // "split" | "riddle"
+  var darkMode = false;
+
+  // On-screen ink flips with the theme (light strokes on dark paper). The
+  // EXPORT (inkDataUrl) always draws black-on-cream for handwriting OCR.
+  function inkColor() {
+    return darkMode ? "#e9e7e0" : "#111";
+  }
 
   // Where the current reply / thinking / error text goes, per mode.
   function activeOut() {
@@ -81,6 +92,58 @@
   var strokes = [];
   var currentStroke = null;
   var config = {};
+
+  // Pan/zoom: strokes are stored in "world" coordinates. The visible canvas is
+  // a window into that world at `view.scale`, offset by (view.ox, view.oy).
+  //   worldPoint  = canvasPx / scale + offset
+  //   canvasPx    = (worldPoint - offset) * scale
+  var view = { scale: 1, ox: 0, oy: 0 };
+  var MIN_SCALE = 0.4;
+  var MAX_SCALE = 5;
+  var panMode = false;
+  var panning = false;
+  var panStartScreen = null;
+  var panStartOffset = null;
+
+  function applyView() {
+    ctx.setTransform(view.scale, 0, 0, view.scale, -view.ox * view.scale, -view.oy * view.scale);
+  }
+
+  function resetView() {
+    view.scale = 1;
+    view.ox = 0;
+    view.oy = 0;
+    applyView();
+  }
+
+  function setScale(newScale) {
+    newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale));
+    var cw = canvas.width, ch = canvas.height;
+    // Keep the world point currently at the canvas center fixed while zooming.
+    var wcx = (cw / 2) / view.scale + view.ox;
+    var wcy = (ch / 2) / view.scale + view.oy;
+    view.scale = newScale;
+    view.ox = wcx - (cw / 2) / newScale;
+    view.oy = wcy - (ch / 2) / newScale;
+    applyView();
+    redrawStrokes();
+    setStatus("Zoom " + Math.round(newScale * 100) + "%");
+  }
+
+  function zoomIn() { setScale(view.scale * 1.25); }
+  function zoomOut() { setScale(view.scale / 1.25); }
+
+  function resetViewAndRedraw() {
+    resetView();
+    redrawStrokes();
+    setStatus("View reset");
+  }
+
+  function togglePan() {
+    panMode = !panMode;
+    if (panBtn) panBtn.className = panMode ? "active" : "";
+    setStatus(panMode ? "Pan mode — drag to move the page" : "Draw mode");
+  }
 
   var sessionId = null;
   var sessionTitle = "";
@@ -105,6 +168,8 @@
   var thinkGen = 0;
   var RSCHAR = String.fromCharCode(30); // record separator between reply and trailer
   var STREAM_RENDER_MS = 160; // throttle live-stream repaints (e-ink friendly)
+  var STALE_SESSION_MS = 3 * 3600 * 1000; // resume an entry only if <3h old
+  var LONG_THREAD = 16; // exchanges after which we nudge toward a fresh entry
 
   function storageGet(key) {
     try { return window.localStorage.getItem(key); } catch (err) { return null; }
@@ -147,27 +212,54 @@
     canvas.height = Math.floor(h);
     canvas.style.width = w + "px";
     canvas.style.height = h + "px";
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    ctx.strokeStyle = "#111";
+    ctx.strokeStyle = inkColor();
     ctx.lineWidth = 3.2;
+    applyView();
     if (strokes.length) redrawStrokes();
   }
 
   function inkDataUrl() {
-    var maxWidth = 900;
-    var sourceWidth = canvas.width;
-    var sourceHeight = canvas.height;
-    var scale = sourceWidth > maxWidth ? maxWidth / sourceWidth : 1;
+    // Export ALL strokes across the whole world, not just the visible viewport,
+    // so Hermes sees everything written regardless of the current zoom/pan.
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (var i = 0; i < strokes.length; i += 1) {
+      var pts = strokes[i].pts;
+      for (var j = 0; j < pts.length; j += 1) {
+        if (pts[j].x < minX) minX = pts[j].x;
+        if (pts[j].x > maxX) maxX = pts[j].x;
+        if (pts[j].y < minY) minY = pts[j].y;
+        if (pts[j].y > maxY) maxY = pts[j].y;
+      }
+    }
+    if (!isFinite(minX)) {
+      // No strokes — fall back to the current viewport in world coords.
+      minX = view.ox; minY = view.oy;
+      maxX = view.ox + canvas.width / view.scale;
+      maxY = view.oy + canvas.height / view.scale;
+    }
+    var pad = 24;
+    minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+    var worldW = Math.max(1, maxX - minX);
+    var worldH = Math.max(1, maxY - minY);
+    var maxDim = 1400;
+    var s = Math.min(1, maxDim / Math.max(worldW, worldH));
     var out = document.createElement("canvas");
-    out.width = Math.max(1, Math.floor(sourceWidth * scale));
-    out.height = Math.max(1, Math.floor(sourceHeight * scale));
+    out.width = Math.max(1, Math.round(worldW * s));
+    out.height = Math.max(1, Math.round(worldH * s));
     var outCtx = out.getContext("2d");
     outCtx.fillStyle = "#fbfaf4";
     outCtx.fillRect(0, 0, out.width, out.height);
-    outCtx.drawImage(canvas, 0, 0, out.width, out.height);
-    return out.toDataURL("image/jpeg", 0.72);
+    outCtx.lineCap = "round";
+    outCtx.lineJoin = "round";
+    outCtx.strokeStyle = "#111";
+    outCtx.fillStyle = "#111";
+    outCtx.setTransform(s, 0, 0, s, -minX * s, -minY * s);
+    for (var k = 0; k < strokes.length; k += 1) {
+      drawStrokeInto(outCtx, strokes[k]);
+    }
+    return out.toDataURL("image/jpeg", 0.8);
   }
 
   function firstTouch(event) {
@@ -176,7 +268,8 @@
     return event;
   }
 
-  function pointFromEvent(event) {
+  // Canvas-pixel coordinates (landscape rotation applied), before pan/zoom.
+  function canvasPointFromEvent(event) {
     if (!rectCache) rectCache = canvas.getBoundingClientRect();
     var rect = rectCache;
     var touch = firstTouch(event);
@@ -196,10 +289,16 @@
     };
   }
 
+  // World coordinates (what strokes are stored in): undo the pan/zoom.
+  function pointFromEvent(event) {
+    var c = canvasPointFromEvent(event);
+    return { x: c.x / view.scale + view.ox, y: c.y / view.scale + view.oy };
+  }
+
   function drawDot(point, color) {
     ctx.beginPath();
     ctx.arc(point.x, point.y, ctx.lineWidth / 2, 0, Math.PI * 2, true);
-    ctx.fillStyle = color || "#111";
+    ctx.fillStyle = color || inkColor();
     ctx.fill();
   }
 
@@ -225,7 +324,7 @@
       return;
     }
     var fast = fastInkEl && fastInkEl.checked;
-    ctx.strokeStyle = "#111";
+    ctx.strokeStyle = inkColor();
     ctx.lineWidth = Number(strokeWidthEl && strokeWidthEl.value) || 3.5;
     ctx.beginPath();
     ctx.moveTo(pathEnd.x, pathEnd.y);
@@ -252,39 +351,64 @@
     }
   }
 
-  function drawStoredStroke(stroke, style) {
-    var color = (style && style.color) || "#111";
-    var widthScale = (style && style.widthScale) || 1;
-    var dy = (style && style.dy) || 0;
-    ctx.strokeStyle = color;
-    ctx.lineWidth = Math.max(0.6, stroke.width * widthScale);
+  // Build a stroke's path into any context `c`, in world coordinates.
+  function buildStrokePath(c, stroke, dy) {
     var pts = stroke.pts;
-    if (pts.length < 2) {
-      drawDot({ x: pts[0].x, y: pts[0].y + dy }, color);
-      return;
-    }
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y + dy);
+    c.beginPath();
+    c.moveTo(pts[0].x, pts[0].y + dy);
     var prev = pts[0];
     for (var i = 1; i < pts.length; i += 1) {
       var p = pts[i];
       if (stroke.fast) {
-        ctx.lineTo(p.x, p.y + dy);
+        c.lineTo(p.x, p.y + dy);
       } else {
         var mid = midpoint(prev, p);
-        ctx.quadraticCurveTo(prev.x, prev.y + dy, mid.x, mid.y + dy);
+        c.quadraticCurveTo(prev.x, prev.y + dy, mid.x, mid.y + dy);
       }
       prev = p;
     }
-    ctx.stroke();
+    c.stroke();
+  }
+
+  function drawStoredStroke(stroke, style) {
+    var color = (style && style.color) || inkColor();
+    var widthScale = (style && style.widthScale) || 1;
+    var dy = (style && style.dy) || 0;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(0.6, stroke.width * widthScale);
+    if (stroke.pts.length < 2) {
+      drawDot({ x: stroke.pts[0].x, y: stroke.pts[0].y + dy }, color);
+      return;
+    }
+    buildStrokePath(ctx, stroke, dy);
+  }
+
+  // Draw a stroke into an export context (no dissolve style, no view transform).
+  function drawStrokeInto(c, stroke) {
+    c.lineWidth = Math.max(0.6, stroke.width);
+    var pts = stroke.pts;
+    if (pts.length < 2) {
+      c.beginPath();
+      c.arc(pts[0].x, pts[0].y, c.lineWidth / 2, 0, Math.PI * 2, true);
+      c.fill();
+      return;
+    }
+    buildStrokePath(c, stroke, 0);
+  }
+
+  function clearScreen() {
+    // Clear the whole physical canvas regardless of the current view transform.
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    applyView();
   }
 
   function redrawStrokes() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    clearScreen();
     for (var i = 0; i < strokes.length; i += 1) {
       drawStoredStroke(strokes[i]);
     }
-    ctx.strokeStyle = "#111";
+    ctx.strokeStyle = inkColor();
     dirty = strokes.length > 0;
     updateHint();
   }
@@ -303,7 +427,7 @@
     function tick() {
       if (step < DISSOLVE.length) {
         var s = DISSOLVE[step];
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        clearScreen();
         for (var i = 0; i < strokes.length; i += 1) {
           drawStoredStroke(strokes[i], s);
         }
@@ -312,8 +436,8 @@
         window.setTimeout(tick, DISSOLVE_STEP_MS);
         return;
       }
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.strokeStyle = "#111";
+      clearScreen();
+      ctx.strokeStyle = inkColor();
       strokes = [];
       currentStroke = null;
       dirty = false;
@@ -409,6 +533,19 @@
       return true;
     }
     if (animating) return stopEvent(event);
+    if (event.pointerId !== undefined && wrap.setPointerCapture) {
+      try { wrap.setPointerCapture(event.pointerId); } catch (err) {}
+    }
+    rectCache = canvas.getBoundingClientRect();
+
+    // Pan mode: drag moves the page instead of drawing on it.
+    if (panMode) {
+      panning = true;
+      panStartScreen = canvasPointFromEvent(event);
+      panStartOffset = { ox: view.ox, oy: view.oy };
+      return stopEvent(event);
+    }
+
     warm(); // pen touched paper — start waking the model now
     // Riddle behavior: pen touching the page makes the old words vanish.
     if (pageText.innerHTML) {
@@ -416,10 +553,6 @@
       pageText.innerHTML = "";
       pageText.style.color = "";
     }
-    if (event.pointerId !== undefined && wrap.setPointerCapture) {
-      try { wrap.setPointerCapture(event.pointerId); } catch (err) {}
-    }
-    rectCache = canvas.getBoundingClientRect();
     last = pointFromEvent(event);
     pathEnd = last;
     queue.length = 0;
@@ -437,6 +570,15 @@
   }
 
   function move(event) {
+    if (panning) {
+      var c = canvasPointFromEvent(event);
+      // Move the world opposite to the drag so content follows the finger.
+      view.ox = panStartOffset.ox - (c.x - panStartScreen.x) / view.scale;
+      view.oy = panStartOffset.oy - (c.y - panStartScreen.y) / view.scale;
+      applyView();
+      redrawStrokes();
+      return stopEvent(event);
+    }
     if (!drawing) return stopEvent(event);
     if (event.getCoalescedEvents) {
       var coalesced = event.getCoalescedEvents();
@@ -451,6 +593,11 @@
   }
 
   function end(event) {
+    if (panning) {
+      panning = false;
+      panStartScreen = null;
+      return stopEvent(event);
+    }
     if (!drawing) return stopEvent(event);
     flushQueue();
     if (!strokeDrew && last) {
@@ -468,41 +615,209 @@
 
   function clearInk() {
     if (animating) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    resetView();
     strokes = [];
     currentStroke = null;
     dirty = false;
+    clearScreen();
     updateHint();
     setStatus("Ready");
   }
 
-  function markdownLite(text) {
-    var escaped = String(text || "")
+  function escHtml(s) {
+    return String(s || "")
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;");
-    var lines = escaped.split(/\r?\n/);
-    var html = "";
-    var inList = false;
-    for (var i = 0; i < lines.length; i += 1) {
-      var line = lines[i];
-      var item = line.match(/^\s*[-*]\s+(.+)/);
-      if (item) {
-        if (!inList) {
-          html += "<ul>";
-          inList = true;
+  }
+
+  // Whitelist-sanitize model-emitted HTML/SVG so an artifact can render safely.
+  var SANITIZE_ALLOWED = {
+    P: 1, BR: 1, HR: 1, B: 1, STRONG: 1, I: 1, EM: 1, U: 1, S: 1, SPAN: 1, DIV: 1,
+    H1: 1, H2: 1, H3: 1, H4: 1, H5: 1, H6: 1, UL: 1, OL: 1, LI: 1, TABLE: 1,
+    THEAD: 1, TBODY: 1, TR: 1, TH: 1, TD: 1, BLOCKQUOTE: 1, PRE: 1, CODE: 1,
+    A: 1, IMG: 1, SMALL: 1, SUB: 1, SUP: 1, FIGURE: 1, FIGCAPTION: 1, LABEL: 1,
+    SVG: 1, PATH: 1, RECT: 1, CIRCLE: 1, LINE: 1, G: 1, TEXT: 1, TSPAN: 1,
+    POLYLINE: 1, POLYGON: 1, ELLIPSE: 1, DEFS: 1, TITLE: 1, MARKER: 1
+  };
+
+  function sanitizeHtml(html) {
+    // Pre-scrub the raw string so no img-onerror etc. fires before DOM cleanup.
+    var pre = String(html || "")
+      .replace(/<\s*(script|style|iframe|object|embed|link|meta|base)[\s\S]*?<\/\s*\1\s*>/gi, "")
+      .replace(/<\s*(script|style|iframe|object|embed|link|meta|base)[^>]*>/gi, "")
+      .replace(/\son\w+\s*=\s*"[^"]*"/gi, "")
+      .replace(/\son\w+\s*=\s*'[^']*'/gi, "")
+      .replace(/\son\w+\s*=\s*[^\s>]+/gi, "");
+    var container = document.createElement("div");
+    try {
+      container.innerHTML = pre;
+    } catch (e) {
+      return escHtml(html);
+    }
+    walkSanitize(container);
+    return container.innerHTML;
+  }
+
+  function walkSanitize(node) {
+    var child = node.firstChild;
+    while (child) {
+      var next = child.nextSibling;
+      if (child.nodeType === 1) {
+        var tag = (child.tagName || "").toUpperCase();
+        if (!SANITIZE_ALLOWED[tag]) {
+          if (tag === "SCRIPT" || tag === "STYLE") {
+            node.removeChild(child);
+          } else {
+            while (child.firstChild) node.insertBefore(child.firstChild, child);
+            node.removeChild(child);
+          }
+        } else {
+          scrubAttrs(child);
+          walkSanitize(child);
         }
-        html += "<li>" + item[1] + "</li>";
-      } else {
-        if (inList) {
-          html += "</ul>";
-          inList = false;
+      }
+      child = next;
+    }
+  }
+
+  function scrubAttrs(el) {
+    var attrs = el.attributes;
+    for (var i = attrs.length - 1; i >= 0; i -= 1) {
+      var name = (attrs[i].name || "").toLowerCase();
+      var val = attrs[i].value || "";
+      if (name.indexOf("on") === 0) {
+        el.removeAttribute(attrs[i].name);
+        continue;
+      }
+      if (name === "href" || name === "src" || name === "xlink:href") {
+        var v = val.replace(/\s/g, "").toLowerCase();
+        if (v.indexOf("javascript:") === 0 || v.indexOf("vbscript:") === 0 ||
+            (v.indexOf("data:") === 0 && v.indexOf("data:image/") !== 0)) {
+          el.removeAttribute(attrs[i].name);
         }
-        if (line.replace(/\s/g, "")) html += "<p>" + line + "</p>";
       }
     }
-    if (inList) html += "</ul>";
-    return html || "<p>No response text.</p>";
+  }
+
+  // Inline formatting on an already-escaped string: code, bold, italic, links.
+  function inlineMd(s) {
+    var codes = [];
+    s = s.replace(/`([^`]+)`/g, function (m, c) {
+      codes.push(c);
+      return "\u0000" + (codes.length - 1) + "\u0000";
+    });
+    s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    s = s.replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>");
+    s = s.replace(/(^|[^_])_([^_]+)_/g, "$1<em>$2</em>");
+    s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, function (m, t, u) {
+      if (/^(javascript|vbscript|data):/i.test(u)) return t;
+      return '<a href="' + u + '">' + t + "</a>";
+    });
+    s = s.replace(/\u0000(\d+)\u0000/g, function (m, n) {
+      return "<code>" + codes[Number(n)] + "</code>";
+    });
+    return s;
+  }
+
+  function markdownLite(text) {
+    var lines = String(text || "").split(/\r?\n/);
+    var out = "";
+    var i = 0;
+    function isTableSep(l) { return /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(l) && l.indexOf("|") >= 0; }
+    function cells(l) {
+      var t = l.replace(/^\s*\|/, "").replace(/\|\s*$/, "");
+      return t.split("|");
+    }
+    while (i < lines.length) {
+      var line = lines[i];
+      var fence = line.match(/^```(\w*)\s*$/);
+      if (fence) {
+        var lang = (fence[1] || "").toLowerCase();
+        var buf = [];
+        i += 1;
+        while (i < lines.length && !/^```\s*$/.test(lines[i])) { buf.push(lines[i]); i += 1; }
+        i += 1;
+        var body = buf.join("\n");
+        if (lang === "html" || lang === "svg") {
+          out += '<div class="artifact">' + sanitizeHtml(body) + "</div>";
+        } else {
+          out += "<pre><code>" + escHtml(body) + "</code></pre>";
+        }
+        continue;
+      }
+      // Raw artifact block: a line that is a full <svg...>...</svg> or fenced by <artifact>
+      if (/^\s*<(svg|table|figure)[\s>]/i.test(line)) {
+        var block = [line];
+        i += 1;
+        var closer = line.match(/<\s*(svg|table|figure)/i)[1];
+        while (i < lines.length && line.toLowerCase().indexOf("</" + closer.toLowerCase() + ">") < 0) {
+          line = lines[i]; block.push(line); i += 1;
+        }
+        out += '<div class="artifact">' + sanitizeHtml(block.join("\n")) + "</div>";
+        continue;
+      }
+      if (isTableSep(lines[i + 1] || "") && line.indexOf("|") >= 0) {
+        var head = cells(line);
+        i += 2;
+        var rowsHtml = "";
+        while (i < lines.length && lines[i].indexOf("|") >= 0 && lines[i].trim() !== "") {
+          var rc = cells(lines[i]);
+          rowsHtml += "<tr>";
+          for (var c = 0; c < rc.length; c += 1) rowsHtml += "<td>" + inlineMd(escHtml(rc[c].trim())) + "</td>";
+          rowsHtml += "</tr>";
+          i += 1;
+        }
+        var headHtml = "<tr>";
+        for (var h = 0; h < head.length; h += 1) headHtml += "<th>" + inlineMd(escHtml(head[h].trim())) + "</th>";
+        headHtml += "</tr>";
+        out += "<table><thead>" + headHtml + "</thead><tbody>" + rowsHtml + "</tbody></table>";
+        continue;
+      }
+      var hd = line.match(/^(#{1,4})\s+(.+)/);
+      if (hd) {
+        var lvl = hd[1].length;
+        out += "<h" + lvl + ">" + inlineMd(escHtml(hd[2])) + "</h" + lvl + ">";
+        i += 1;
+        continue;
+      }
+      if (/^\s*([-*_])\1\1+\s*$/.test(line)) { out += "<hr>"; i += 1; continue; }
+      if (/^\s*>\s?/.test(line)) {
+        var q = [];
+        while (i < lines.length && /^\s*>\s?/.test(lines[i])) { q.push(escHtml(lines[i].replace(/^\s*>\s?/, ""))); i += 1; }
+        out += "<blockquote>" + inlineMd(q.join("<br>")) + "</blockquote>";
+        continue;
+      }
+      if (/^\s*[-*]\s+/.test(line)) {
+        out += "<ul>";
+        while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) {
+          out += "<li>" + inlineMd(escHtml(lines[i].replace(/^\s*[-*]\s+/, ""))) + "</li>";
+          i += 1;
+        }
+        out += "</ul>";
+        continue;
+      }
+      if (/^\s*\d+\.\s+/.test(line)) {
+        out += "<ol>";
+        while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
+          out += "<li>" + inlineMd(escHtml(lines[i].replace(/^\s*\d+\.\s+/, ""))) + "</li>";
+          i += 1;
+        }
+        out += "</ol>";
+        continue;
+      }
+      if (line.replace(/\s/g, "") === "") { i += 1; continue; }
+      var para = [];
+      while (i < lines.length && lines[i].trim() !== "" &&
+             !/^```/.test(lines[i]) && !/^\s*[-*]\s+/.test(lines[i]) &&
+             !/^\s*\d+\.\s+/.test(lines[i]) && !/^(#{1,4})\s+/.test(lines[i]) &&
+             !/^\s*>\s?/.test(lines[i]) && !(isTableSep(lines[i + 1] || "") && lines[i].indexOf("|") >= 0)) {
+        para.push(escHtml(lines[i]));
+        i += 1;
+      }
+      out += "<p>" + inlineMd(para.join("<br>")) + "</p>";
+    }
+    return out || "<p>No response text.</p>";
   }
 
   function renderLatest() {
@@ -522,9 +837,17 @@
       ? markdownLite(lastReply.text)
       : (out === reply ? "<p>Hermes replies will appear here.</p>" : "");
     if (other) other.innerHTML = "";
-    sessionLabel.innerHTML = thread.length
-      ? "Entry: " + escapeHtml(sessionTitle || "Untitled")
-      : "New entry";
+    if (!thread.length) {
+      sessionLabel.innerHTML = "New entry";
+    } else {
+      var label = "Entry: " + escapeHtml(sessionTitle || "Untitled");
+      // Nudge toward a fresh entry once a thread gets long, so unrelated
+      // topics don't keep piling into (and polluting) one conversation.
+      if (thread.length >= LONG_THREAD) {
+        label += ' &middot; <span class="nudge">long — tap New for a fresh topic</span>';
+      }
+      sessionLabel.innerHTML = label;
+    }
     updateHint();
   }
 
@@ -628,7 +951,15 @@
     var cls = [];
     if (landscape) cls.push("landscape");
     if (mode === "split") cls.push("split");
+    if (darkMode) cls.push("dark");
     document.body.className = cls.join(" ");
+  }
+
+  function applyDark(on) {
+    darkMode = !!on;
+    storageSet("diaryDark", darkMode ? "1" : null);
+    syncBodyClass();
+    if (strokes.length) redrawStrokes(); // recolor existing ink for the theme
   }
 
   function applyLandscape(on) {
@@ -756,6 +1087,16 @@
         return;
       }
       var s = json.session;
+      // Session hygiene: don't silently resume a stale entry. If the last
+      // activity was hours ago, start fresh so a new topic doesn't pile onto
+      // an old one (which is how everything ended up in one long thread).
+      var updated = s.updatedAt ? Date.parse(s.updatedAt) : 0;
+      if (updated && ((new Date()).getTime() - updated) > STALE_SESSION_MS) {
+        storageSet("diarySessionId", null);
+        renderLatest();
+        setStatus("Started a fresh entry");
+        return;
+      }
       sessionId = s.id;
       sessionTitle = s.title;
       thread = s.messages || [];
@@ -825,11 +1166,12 @@
   }
 
   function clearCanvasNow() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.strokeStyle = "#111";
+    resetView();
+    ctx.strokeStyle = inkColor();
     strokes = [];
     currentStroke = null;
     dirty = false;
+    clearScreen();
     updateHint();
   }
 
@@ -865,11 +1207,12 @@
     }
 
     function clearCanvas() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.strokeStyle = "#111";
+      resetView();
+      ctx.strokeStyle = inkColor();
       strokes = [];
       currentStroke = null;
       dirty = false;
+      clearScreen();
       updateHint();
     }
 
@@ -1064,6 +1407,7 @@
   }
 
   function add(el, name, fn) {
+    if (!el) return;
     if (el.addEventListener) el.addEventListener(name, fn, false);
     else if (el.attachEvent) el.attachEvent("on" + name, fn);
   }
@@ -1108,16 +1452,26 @@
   add(pgDn, "click", function () { pageScroll(1); });
   add(pgUp2, "click", function () { pageScroll(-1); });
   add(pgDn2, "click", function () { pageScroll(1); });
+  add(zoomInBtn, "click", zoomIn);
+  add(zoomOutBtn, "click", zoomOut);
+  add(panBtn, "click", togglePan);
+  add(resetViewBtn, "click", resetViewAndRedraw);
 
   // Apply saved mode + orientation before first paint.
   mode = storageGet("diaryMode") === "riddle" ? "riddle" : "split";
   landscape = storageGet("diaryLandscape") === "1";
+  darkMode = storageGet("diaryDark") === "1";
   if (modeBtn) modeBtn.textContent = mode === "split" ? "Mode: Split" : "Mode: Riddle";
   if (streamEl) {
     streamEl.checked = storageGet("diaryStream") !== "0";
     add(streamEl, "change", function () {
       storageSet("diaryStream", streamEl.checked ? "1" : "0");
     });
+  }
+  var darkEl = document.getElementById("darkOn");
+  if (darkEl) {
+    darkEl.checked = darkMode;
+    add(darkEl, "change", function () { applyDark(darkEl.checked); });
   }
   syncBodyClass();
 

@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Hermes Agents Guide to the Galaxy</title>
-    <link rel="stylesheet" href="/styles.css?v=12">
+    <link rel="stylesheet" href="/styles.css?v=16">
   </head>
   <body>
     <main class="diary">
@@ -33,6 +33,7 @@
             <button id="rotateBtn" type="button" class="toolBtn">Rotate</button>
             <label class="opt"><input id="fastInk" type="checkbox" checked> Fast ink</label>
             <label class="opt"><input id="streamOn" type="checkbox" checked> Stream</label>
+            <label class="opt"><input id="darkOn" type="checkbox"> Dark mode</label>
           </div>
         </details>
 
@@ -54,6 +55,12 @@
               <div class="pageCtl">
                 <button id="pgUp" type="button">&#9650;</button>
                 <button id="pgDn" type="button">&#9660;</button>
+              </div>
+              <div class="zoomCtl">
+                <button id="zoomIn" type="button" aria-label="Zoom in">+</button>
+                <button id="zoomOut" type="button" aria-label="Zoom out">&#8722;</button>
+                <button id="panBtn" type="button" aria-label="Pan">&#9995;</button>
+                <button id="resetView" type="button" aria-label="Reset view">1:1</button>
               </div>
               <div id="emptyHint">Write here, then tap Send.</div>
             </div>
@@ -79,9 +86,9 @@
           <label>
             Target
             <select id="target">
-              <option value="auto">Hermes Agent</option>
-              <option value="hermes">Hermes gateway</option>
-              <option value="local">Local fallback</option>
+              <option value="auto">Plain assistant (default)</option>
+              <option value="hermes">Hermes firm agent (has tools)</option>
+              <option value="local">Local models</option>
               <option value="custom">Custom OpenAI-compatible endpoint</option>
             </select>
           </label>
@@ -100,6 +107,6 @@
         </details>
       </section>
     </main>
-    <script src="/app.js?v=12"></script>
+    <script src="/app.js?v=16"></script>
   </body>
 </html>
