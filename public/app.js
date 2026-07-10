@@ -81,6 +81,13 @@
   var panBtn = document.getElementById("panBtn");
   var resetViewBtn = document.getElementById("resetView");
 
+  // Keep every frequent action in one compact strip.
+  var actionStrip = document.querySelector(".actions");
+  if (actionStrip && historyBtn) {
+    actionStrip.insertBefore(undoBtn, historyBtn);
+    actionStrip.insertBefore(clearBtn, historyBtn);
+  }
+
   var landscape = false;
   var mode = "split"; // "split" | "riddle"
   var darkMode = false;
@@ -529,8 +536,13 @@
     stopThinking();
     revealGen += 1;
     out.style.color = "#7a2a20";
-    out.innerHTML = "<p><strong>Couldn't reach Hermes.</strong></p><p>" +
-      escapeHtml(message) + "</p><p>Your writing is still there — tap Send to try again.</p>";
+    if (/unauthorized|HTTP 401/i.test(String(message || ""))) {
+      out.innerHTML = "<p><strong>Diary authorization expired.</strong></p>" +
+        "<p>Reopen the secure Kindle bookmark once. Your writing is still here.</p>";
+    } else {
+      out.innerHTML = "<p><strong>Couldn't reach Hermes.</strong></p><p>" +
+        escapeHtml(message) + "</p><p>Your writing is still there — tap Send to try again.</p>";
+    }
   }
 
   function schedulePoint(point) {

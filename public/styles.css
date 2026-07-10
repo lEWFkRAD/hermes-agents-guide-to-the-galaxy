@@ -42,21 +42,24 @@ textarea {
 
 .diary {
   min-height: 100vh;
-  padding: 14px;
+  padding: 8px;
 }
 
 .page {
   max-width: 980px;
   margin: 0 auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 6px;
   border-bottom: 2px solid var(--ink);
-  padding-bottom: 10px;
+  padding-bottom: 4px;
+  order: 0;
 }
 
 .brand {
@@ -65,7 +68,7 @@ textarea {
 
 h1 {
   margin: 0;
-  font-size: clamp(19px, 4.2vw, 28px);
+  font-size: 18px;
   line-height: 1.05;
   letter-spacing: 0;
   font-weight: 700;
@@ -77,18 +80,25 @@ h1 .sub {
 }
 
 .bar p {
-  margin: 4px 0 0;
-  font-size: 14px;
+  margin: 1px 0 0;
+  font-size: 11px;
   color: #6b6455;
 }
 
 .actions {
   display: flex;
-  gap: 8px;
+  gap: 4px;
+  flex-wrap: nowrap;
+}
+
+.actions button {
+  min-width: 0;
+  min-height: 34px;
+  padding: 4px 8px;
 }
 
 .tools {
-  display: flex;
+  display: none;
   justify-content: flex-end;
   align-items: center;
   gap: 10px;
@@ -114,6 +124,7 @@ h1 .sub {
 .options {
   border-bottom: 1px solid var(--line);
   padding-bottom: 6px;
+  order: 10;
 }
 
 .options > summary {
@@ -146,6 +157,7 @@ h1 .sub {
 .workspaceLab {
   border-bottom: 1px solid var(--line);
   padding: 4px 0 10px;
+  order: 11;
 }
 
 .workspaceLab > summary {
@@ -684,6 +696,7 @@ textarea {
 }
 
 .sessionLabel {
+  order: 3;
   margin: 8px 0 0;
   min-height: 18px;
   font-size: 14px;
@@ -720,6 +733,10 @@ textarea {
 
 .readCol {
   display: none;
+}
+
+.page > .split {
+  order: 2;
 }
 
 .reply p,
@@ -807,6 +824,7 @@ body.landscape.split .reply {
 }
 
 .settings {
+  order: 12;
   border-top: 1px solid var(--line);
   padding-top: 10px;
 }
@@ -895,15 +913,18 @@ body.landscape .settings {
   }
 
   .bar {
-    align-items: flex-start;
+    align-items: center;
   }
 
   .actions {
-    flex-direction: column;
+    flex-direction: row;
   }
 
-  button {
-    min-width: 72px;
+  .actions button {
+    min-width: 0;
+    padding-left: 5px;
+    padding-right: 5px;
+    font-size: 13px;
   }
 
   .workspaceControls,

@@ -141,6 +141,13 @@ const authToken = process.env.DIARY_AUTH_TOKEN || "";
 function authOk(req) {
   if (!authToken) return true;
   if ((req.headers["x-diary-auth"] || "") === authToken) return true;
+  const cookies = String(req.headers.cookie || "").split(";");
+  for (const cookie of cookies) {
+    const [name, ...value] = cookie.trim().split("=");
+    try {
+      if (name === "diary_auth" && decodeURIComponent(value.join("=")) === authToken) return true;
+    } catch {}
+  }
   try {
     const u = new URL(req.url, "http://diary.local");
     if (u.searchParams.get("k") === authToken) return true;
@@ -863,6 +870,22 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "OPTIONS") {
     send(res, 204, "");
     return;
+  }
+  // Pair from the secure link, then remove its secret from the address bar.
+  // Kindle retains first-party cookies more reliably than localStorage.
+  if (authToken && req.method === "GET") {
+    const requestUrl = new URL(req.url, "http://diary.local");
+    if (requestUrl.searchParams.get("k") === authToken) {
+      requestUrl.searchParams.delete("k");
+      const location = requestUrl.pathname + requestUrl.search;
+      res.writeHead(302, {
+        location: location || "/",
+        "set-cookie": `diary_auth=${encodeURIComponent(authToken)}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Strict`,
+        "cache-control": "no-store"
+      });
+      res.end();
+      return;
+    }
   }
   // Gate the API (models + your data) when a shared secret is configured.
   // /api/config stays open so the page can learn whether auth is required.
