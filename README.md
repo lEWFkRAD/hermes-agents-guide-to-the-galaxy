@@ -101,6 +101,58 @@ bookmark it. Config is via env vars (all optional):
   replace `__INSTALL_DIR__` with the folder you cloned into and `__USER__`
   with your `DOMAIN\user` (e.g. from `whoami`).
 
+## Away from the LAN with Tailscale Funnel
+
+A stock Kindle Scribe cannot install Tailscale. Tailscale Funnel gives it a
+public HTTPS URL while `DIARY_REMOTE_KEY` provides a permanent, bookmark-carried
+device secret. This does not depend on Kindle cookies or local storage.
+
+1. Generate and persist a high-entropy key on the diary host:
+
+   ```powershell
+   $bytes = New-Object byte[] 18
+   $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+   $rng.GetBytes($bytes)
+   $rng.Dispose()
+   $key = [Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+','-').Replace('/','_')
+   [Environment]::SetEnvironmentVariable('DIARY_REMOTE_KEY', $key, 'User')
+   ```
+
+2. Restart the diary so it loads the saved key.
+
+3. Enable HTTPS Funnel from an administrator shell:
+
+   ```powershell
+   tailscale funnel --yes --bg --https=443 http://127.0.0.1:8791
+   ```
+
+   If Tailscale prints a policy-approval URL, approve this node and rerun the
+   command. Existing Serve/Funnel routes on other ports are preserved.
+
+4. Print the permanent Kindle bookmark:
+
+   ```powershell
+   $key = [Environment]::GetEnvironmentVariable('DIARY_REMOTE_KEY', 'User')
+   $dns = ((tailscale status --json | ConvertFrom-Json).Self.DNSName).TrimEnd('.')
+   "https://$dns/?rk=$key"
+   ```
+
+5. Verify the boundary before using it:
+
+   - The full bookmark loads the diary and its sessions.
+   - The same `*.ts.net/api/sessions` URL without `rk` returns `401`.
+   - A wrong key returns `401`.
+   - The office-LAN URL keeps its existing authentication behavior.
+
+To disable public exposure without changing the diary configuration:
+
+```powershell
+tailscale funnel --https=443 off
+```
+
+Treat the complete bookmark as a password. Rotate `DIARY_REMOTE_KEY` immediately
+if it is copied into chat, logs, screenshots, or any system you do not trust.
+
 ## Data & privacy
 
 - Entries and handwriting images live under `data/` and are **git-ignored** —
