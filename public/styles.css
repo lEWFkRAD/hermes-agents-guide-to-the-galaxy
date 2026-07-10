@@ -559,7 +559,9 @@ canvas {
 
 .zoomCtl {
   position: absolute;
-  top: 8px;
+  /* The canvas fills the page behind the floating header. Start its controls
+     below that header so the eraser/zoom rail never covers the action row. */
+  top: 56px;
   right: 8px;
   display: flex;
   flex-direction: column;
