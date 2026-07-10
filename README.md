@@ -45,6 +45,9 @@ bookmark it. Config is via env vars (all optional):
 - **Landscape mode** — rotates the whole UI for a wider writing surface.
 - **Sessions / History** — every entry is a conversation with full context;
   browse, reopen, continue, or delete past entries in the History popup.
+- **Explicit session boundaries** — tapping **New** immediately assigns a fresh
+  Kindle/Hermes thread identity. Reopening an entry restores its original agent
+  thread, so context never leaks between notebook entries.
 - **Pre-warm** — a warm-up ping fires on page open and pen-down so the model is
   hot by the time you hit Send, avoiding cold-start latency.
 - **Image retention** — handwriting is stored as files (not inline), and an

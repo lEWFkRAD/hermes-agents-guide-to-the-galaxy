@@ -163,6 +163,7 @@
   }
 
   var sessionId = null;
+  var hermesThreadId = null;
   var sessionTitle = "";
   var thread = [];
   var viewedSession = null;
@@ -187,6 +188,10 @@
   var STREAM_RENDER_MS = 160; // throttle live-stream repaints (e-ink friendly)
   var STALE_SESSION_MS = 3 * 3600 * 1000; // resume an entry only if <3h old
   var LONG_THREAD = 16; // exchanges after which we nudge toward a fresh entry
+
+  function newHermesThreadId() {
+    return "kindle-" + (new Date()).getTime().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+  }
 
   function storageGet(key) {
     try { return window.localStorage.getItem(key); } catch (err) { return null; }
@@ -963,6 +968,7 @@
   function newEntry() {
     if (animating) return;
     sessionId = null;
+    hermesThreadId = newHermesThreadId();
     sessionTitle = "";
     thread = [];
     storageSet("diarySessionId", null);
@@ -970,7 +976,7 @@
     typed.value = "";
     renderLatest();
     hideHistory();
-    setStatus("New entry");
+    setStatus("New Hermes session");
   }
 
   // Body class carries BOTH orientation and mode, so set them together.
@@ -1083,6 +1089,7 @@
   function continueSession(id) {
     if (!viewedSession || viewedSession.id !== id) return;
     sessionId = viewedSession.id;
+    hermesThreadId = viewedSession.channelThreadId || viewedSession.id;
     sessionTitle = viewedSession.title;
     thread = viewedSession.messages || [];
     storageSet("diarySessionId", sessionId);
@@ -1125,6 +1132,7 @@
         return;
       }
       sessionId = s.id;
+      hermesThreadId = s.channelThreadId || s.id;
       sessionTitle = s.title;
       thread = s.messages || [];
       renderLatest();
@@ -1139,6 +1147,7 @@
       }
       if (id === sessionId) {
         sessionId = null;
+        hermesThreadId = newHermesThreadId();
         sessionTitle = "";
         thread = [];
         storageSet("diarySessionId", null);
@@ -1171,7 +1180,8 @@
       token: tokenEl.value.replace(/^\s+|\s+$/g, ""),
       text: typed.value.replace(/^\s+|\s+$/g, ""),
       imageDataUrl: dirty ? inkDataUrl() : "",
-      sessionId: sessionId
+      sessionId: sessionId,
+      hermesThreadId: hermesThreadId
     };
   }
 
@@ -1285,6 +1295,7 @@
         return;
       }
       sessionId = json.sessionId;
+      hermesThreadId = json.hermesThreadId || hermesThreadId;
       sessionTitle = json.title || sessionTitle;
       storageSet("diarySessionId", sessionId);
       thread.push({ role: "user", text: payload.text, ink: savedInk });
@@ -1348,6 +1359,7 @@
         try {
           var meta = JSON.parse(txt.slice(0, nl));
           if (meta && meta.sessionId) sessionId = meta.sessionId;
+          if (meta && meta.hermesThreadId) hermesThreadId = meta.hermesThreadId;
         } catch (e) {}
         metaParsed = true;
         headerEnd = nl + 1;
@@ -1536,5 +1548,8 @@
 
   var savedSession = storageGet("diarySessionId");
   if (savedSession) activateSession(savedSession);
-  else renderLatest();
+  else {
+    hermesThreadId = newHermesThreadId();
+    renderLatest();
+  }
 }());

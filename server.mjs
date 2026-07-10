@@ -568,6 +568,10 @@ async function handleSend(req, res) {
         messages: []
       };
     }
+    const requestedHermesThreadId = typeof body.hermesThreadId === "string" && /^[A-Za-z0-9_-]{1,160}$/.test(body.hermesThreadId)
+      ? body.hermesThreadId
+      : "";
+    if (!session.channelThreadId) session.channelThreadId = requestedHermesThreadId || session.id;
 
     const history = session.messages.slice(-12).map(m => ({
       role: m.role,
@@ -620,12 +624,12 @@ async function handleSend(req, res) {
           "cache-control": "no-store",
           "access-control-allow-origin": "*"
         });
-        res.write(JSON.stringify({ sessionId: session.id }) + "\n");
+        res.write(JSON.stringify({ sessionId: session.id, hermesThreadId: session.channelThreadId }) + "\n");
       }
 
       let result;
       try {
-        result = await callKindleChannel({ text: noteText, chatId: session.id });
+        result = await callKindleChannel({ text: noteText, chatId: session.channelThreadId });
       } catch (error) {
         logSend({ kind: "error", target: "hermes", channel: true, error: error.message });
         if (wantStream) {
@@ -655,7 +659,7 @@ async function handleSend(req, res) {
         res.write(RS + JSON.stringify({ title: session.title }));
         res.end();
       } else {
-        send(res, 200, JSON.stringify({ ok: true, text: result.text, sessionId: session.id, title: session.title }));
+        send(res, 200, JSON.stringify({ ok: true, text: result.text, sessionId: session.id, hermesThreadId: session.channelThreadId, title: session.title }));
       }
       return;
     }
@@ -670,7 +674,7 @@ async function handleSend(req, res) {
         "access-control-allow-origin": "*"
       });
       // First line = metadata the client needs immediately (session id).
-      res.write(JSON.stringify({ sessionId: session.id }) + "\n");
+      res.write(JSON.stringify({ sessionId: session.id, hermesThreadId: session.channelThreadId }) + "\n");
 
       let result;
       try {
