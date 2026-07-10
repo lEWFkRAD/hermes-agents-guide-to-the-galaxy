@@ -75,6 +75,7 @@ bookmark it. Config is via env vars (all optional):
 | Route | Purpose |
 | --- | --- |
 | `POST /api/send` | Send a note; supports `stream: true` for live streaming |
+| `POST /api/channel/reset` | Rotate the active Hermes channel session when New is pressed |
 | `GET /api/sessions` | List entries |
 | `GET /api/sessions/:id` | Fetch one entry's full thread |
 | `POST /api/sessions/:id/delete` | Delete an entry |

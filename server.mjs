@@ -428,7 +428,7 @@ async function callChatStream({ endpoint, model, token, text, imageDataUrl, hist
 
 // Firm-agent CHANNEL call: hand the note to the Kindle gateway platform adapter,
 // which runs the real agent (MoA + tools) and returns its reply. Non-streaming v1.
-async function callKindleChannel({ text, chatId }) {
+async function callKindleChannel({ text, chatId, rawText = false }) {
   const channelInstruction = [
     "[Kindle Scribe channel: The following text was transcribed from handwriting and may contain",
     "spacing or proper-name errors. Treat likely firm names and people contextually. For any",
@@ -444,7 +444,7 @@ async function callKindleChannel({ text, chatId }) {
         "content-type": "application/json",
         ...(kindleIngestToken ? { "x-kindle-token": kindleIngestToken } : {})
       },
-      body: JSON.stringify({ text: `${channelInstruction}\n\n${text}`, user: kindleUser, chat_id: chatId })
+      body: JSON.stringify({ text: rawText ? text : `${channelInstruction}\n\n${text}`, user: kindleUser, chat_id: chatId })
     });
   } catch {
     throw new Error(
@@ -1034,6 +1034,23 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === "POST" && req.url === "/api/send") {
     await handleSend(req, res);
+    return;
+  }
+  if (req.method === "POST" && req.url === "/api/channel/reset") {
+    try {
+      const body = JSON.parse(await readBody(req));
+      const chatId = typeof body.chatId === "string" ? body.chatId.trim() : "";
+      if (!/^[A-Za-z0-9_-]{1,160}$/.test(chatId)) {
+        send(res, 400, JSON.stringify({ ok: false, error: "Invalid channel thread" }));
+        return;
+      }
+      const result = await callKindleChannel({ text: "/new", chatId, rawText: true });
+      logSend({ kind: "channel-reset", chatId });
+      send(res, 200, JSON.stringify({ ok: true, text: result.text }));
+    } catch (error) {
+      logSend({ kind: "channel-reset-error", error: error.message });
+      send(res, 502, JSON.stringify({ ok: false, error: error.message }));
+    }
     return;
   }
   if (req.url.startsWith("/api/workspaces")) {

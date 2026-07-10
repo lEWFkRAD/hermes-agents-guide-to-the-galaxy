@@ -1094,10 +1094,9 @@
     });
   }
 
-  function newEntry() {
-    if (animating) return;
+  function finishNewEntry(channelThreadId, resetWorked) {
     sessionId = null;
-    hermesThreadId = newHermesThreadId();
+    hermesThreadId = channelThreadId || newHermesThreadId();
     sessionTitle = "";
     thread = [];
     storageSet("diarySessionId", null);
@@ -1105,7 +1104,26 @@
     typed.value = "";
     renderLatest();
     hideHistory();
-    setStatus("New Hermes session");
+    setBusy(false);
+    setStatus(resetWorked ? "New Hermes session" : "New session (fresh channel)");
+  }
+
+  function newEntry() {
+    if (animating) return;
+    var previousThreadId = hermesThreadId;
+    if (!sessionId || !previousThreadId) {
+      finishNewEntry(newHermesThreadId(), true);
+      return;
+    }
+    setBusy(true);
+    setStatus("Starting new Hermes session");
+    ajaxJson("POST", "/api/channel/reset", { chatId: previousThreadId }, function (error, json) {
+      // A successful /new rotates Hermes's durable session while preserving
+      // this channel lane. On failure, use a brand-new lane so context cannot
+      // leak even though the old route could not be finalized.
+      var resetWorked = !error && json && json.ok;
+      finishNewEntry(resetWorked ? previousThreadId : newHermesThreadId(), resetWorked);
+    }, 45000);
   }
 
   // Body class carries BOTH orientation and mode, so set them together.
