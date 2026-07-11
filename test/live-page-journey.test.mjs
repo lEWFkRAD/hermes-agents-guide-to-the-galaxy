@@ -16,7 +16,7 @@ async function journeySources() {
 
 test("Journey is loaded beside the live page and adds its button to the pencil palette", async () => {
   const { html, source } = await journeySources();
-  assert.match(html, /live-journey\.css\?v=2/);
+  assert.match(html, /live-journey\.css\?v=3/);
   assert.match(html, /live-journey\.js\?v=3/);
   assert.match(source, /journeyBtn\.id = "journeyBtn"/);
   assert.match(source, /backBtn\.parentNode\.insertBefore\(journeyBtn, backBtn\)/);
