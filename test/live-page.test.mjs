@@ -58,6 +58,8 @@ test("injects the selected viewer theme without changing stored HTML", () => {
   assert.match(dark, /--live-paper:#15140f!important/);
   assert.match(dark, /color-scheme:dark/);
   assert.match(light, /--live-paper:#fbfaf4!important/);
+  assert.match(light, /html\{height:100%!important;overflow:auto!important\}/);
+  assert.match(light, /body\{height:auto!important;min-height:100%!important;overflow:visible!important/);
   assert.doesNotMatch(source, /live-viewer-theme/);
 });
 
