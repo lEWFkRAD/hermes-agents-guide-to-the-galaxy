@@ -143,6 +143,7 @@
   var currentDisplayEl = null;
   var MAX_POINT_T = 600000;
   var pendingInkSend = null;
+  var emptyHintDismissed = !!sessionId;
 
   function inkColor() {
     return darkMode ? "#f2efe7" : "#171612";
@@ -704,7 +705,7 @@
     displayEl.setAttribute("viewBox", "0 0 " + canvasEl.width + " " + canvasEl.height);
     displayEl.setAttribute("preserveAspectRatio", "none");
     for (var i = 0; i < strokes.length; i += 1) { var el=drawStroke(strokes[i]); if(selectedStrokeIds.indexOf(strokes[i].id)>=0) el.setAttribute("class","selectedInk"); }
-    if (emptyHintEl) emptyHintEl.hidden = strokes.length > 0;
+    if (emptyHintEl) emptyHintEl.hidden = emptyHintDismissed || strokes.length > 0;
     if (drawing && currentStroke) currentDisplayEl = displayEl.lastChild;
   }
   function exportInk(selected) {
@@ -896,6 +897,8 @@
 
   function startInk(event) {
     if (!drawMode || sendBusy || pendingInkSend) return true;
+    emptyHintDismissed = true;
+    if (emptyHintEl) emptyHintEl.hidden = true;
     // Fast pen input can deliver the next down before the previous up is
     // observed. Persist that completed geometry instead of orphaning it when
     // currentStroke is replaced below.
@@ -1120,6 +1123,8 @@
     messageEl.className = "liveMessage hidden";
   }
   function showReply(text) {
+    emptyHintDismissed = true;
+    if (emptyHintEl) emptyHintEl.hidden = true;
     setText(replyTextEl, text || "Hermes finished.");
     replyEl.hidden = false;
   }
@@ -1215,6 +1220,7 @@
       newPageBusy=false;
       if (error) { setText(stateEl, "Could not open blank page"); return; }
       sessionId="";hermesThreadId=newHermesThreadId();
+      emptyHintDismissed=false;
       storageRemove("diarySessionId");storageSet("diaryHermesThreadId",hermesThreadId);
       clearInk();hideReply();setToolsOpen(false);closeMenus("");
       // Retire the old Hermes lane only after the replacement page exists.
@@ -1263,6 +1269,7 @@
       return;
     }
     var changedRevision = !!revision && page.revision !== revision;
+    if (page.title !== "Blank page") emptyHintDismissed = true;
     var matchingCachedStrokes = matchingRevisionStrokes(strokes, page.revision);
     var staleActiveInk = !revision && inkActiveRevision && inkActiveRevision !== page.revision;
     var staleInitialInk = !revision && (staleActiveInk || matchingCachedStrokes.length !== strokes.length);

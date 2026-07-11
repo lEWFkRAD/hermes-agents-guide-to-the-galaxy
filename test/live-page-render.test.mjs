@@ -27,7 +27,7 @@ test("live ink uses the same smooth curve for display and Hermes export", async 
 test("live shell cache-busts the current renderer and Journey assets", async () => {
   const html = await fs.readFile(path.join(repoRoot, "public", "live.html"), "utf8");
   assert.match(html, /live\.css\?v=15/);
-  assert.match(html, /live\.js\?v=27/);
+  assert.match(html, /live\.js\?v=28/);
   assert.match(html, /class="labeledTool"/);
   assert.match(html, /id="hermesToggleBtn"/);
   assert.match(html, /id="moreToggleBtn"/);
@@ -132,6 +132,14 @@ test("live drawing keeps coalesced samples, final points, and bounded relative t
   assert.match(source, /if \(drawing && currentStroke\) commitCurrentStroke\(\)/);
   assert.match(source, /add\(document, "pointerup", endInk\)/);
   assert.doesNotMatch(source, /add\(element, "pointerleave", endInk\)/);
+});
+
+test("blank-page hint stays dismissed after writing or a Hermes response", async () => {
+  const source = await fs.readFile(path.join(repoRoot, "public", "live.js"), "utf8");
+  assert.match(source, /var emptyHintDismissed = !!sessionId/);
+  assert.match(source, /emptyHintEl\.hidden = emptyHintDismissed \|\| strokes\.length > 0/);
+  assert.match(source, /function showReply\(text\) \{[\s\S]*emptyHintDismissed = true/);
+  assert.match(source, /if \(page\.title !== "Blank page"\) emptyHintDismissed = true/);
 });
 
 test("lost send responses reuse the persisted claim without deleting visible ink", async () => {
