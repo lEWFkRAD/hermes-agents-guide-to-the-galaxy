@@ -16,7 +16,7 @@
     var search = window.location.search || "";
     var authMatch = search.match(/[?&]k=([^&#]+)/);
     var remoteQuery = search.match(/[?&]rk=([^&#]+)/);
-    var remotePath = (window.location.pathname || "").match(/^\/remote\/([^/]+)\/live\/?$/);
+    var remotePath = (window.location.pathname || "").match(/^\/remote\/([^/]+)(?:\/live)?\/?$/);
     if (remoteQuery) remoteKey = decodeURIComponent(remoteQuery[1]);
     else if (remotePath) remoteKey = decodeURIComponent(remotePath[1]);
     try {
@@ -78,9 +78,12 @@
   var eraserInkBtn = document.getElementById("eraserInkBtn");
   var copyInkBtn = document.getElementById("copyInkBtn");
   var pasteInkBtn = document.getElementById("pasteInkBtn");
+  var lassoInkBtn = document.getElementById("lassoInkBtn");
+  var rotateInkBtn = document.getElementById("rotateInkBtn");
   var backBtn = document.getElementById("backBtn");
   var liveHistoryBtn = document.getElementById("liveHistoryBtn");
   var liveNewBtn = document.getElementById("liveNewBtn");
+  var liveThemeBtn = document.getElementById("liveThemeBtn");
   var liveSendBtn = document.getElementById("liveSendBtn");
   var liveHistoryEl = document.getElementById("liveHistory");
   var liveHistoryCloseBtn = document.getElementById("liveHistoryCloseBtn");
@@ -95,10 +98,14 @@
   var strokes = [];
   var currentStroke = null;
   var drawing = false;
-  var drawMode = false;
+  var drawMode = true;
   var toolsOpen = false;
   var eraserMode = false;
   var inkClipboard = [];
+  var lassoMode = false;
+  var lassoing = false;
+  var lassoPoints = [];
+  var selectedStrokeIds = [];
   var INK_STORAGE_KEY = "livePageInkV1";
   var INK_CLIENT_KEY = "livePageInkClientV2";
   var INK_MIGRATION_KEY = "livePageInkMigratedV2";
@@ -316,6 +323,7 @@
     if (liveSendBtn) liveSendBtn.disabled = sendInkBtn.disabled;
     if (copyInkBtn) copyInkBtn.disabled = sendBusy || !strokes.length;
     if (pasteInkBtn) pasteInkBtn.disabled = sendBusy || !inkClipboard.length;
+    if (rotateInkBtn) rotateInkBtn.disabled = sendBusy || !selectedStrokeIds.length;
   }
 
   function saveInk() {
@@ -869,6 +877,7 @@
 
   function startInk(event) {
     if (!drawMode || sendBusy || pendingInkSend) return true;
+    if (lassoMode) { lassoing = true; lassoPoints = [pointFromEvent(event)]; return stopEvent(event); }
     if (eraserMode) {
       var eraserPoint = pointFromEvent(event), removedIds = [];
       for (var eraseIndex = strokes.length - 1; eraseIndex >= 0; eraseIndex -= 1) {
@@ -917,6 +926,7 @@
   }
 
   function moveInk(event) {
+    if (lassoing) { lassoPoints.push(pointFromEvent(event)); return stopEvent(event); }
     if (!drawing || !currentStroke) return stopEvent(event);
     var samples = [event];
     if (typeof event.getCoalescedEvents === "function") {
@@ -959,6 +969,16 @@
   }
 
   function endInk(event) {
+    if (lassoing) {
+      lassoing = false;
+      if (lassoPoints.length > 2) {
+        var lx0=1, ly0=1, lx1=0, ly1=0;
+        for (var lp=0; lp<lassoPoints.length; lp+=1) { lx0=Math.min(lx0,lassoPoints[lp].x); ly0=Math.min(ly0,lassoPoints[lp].y); lx1=Math.max(lx1,lassoPoints[lp].x); ly1=Math.max(ly1,lassoPoints[lp].y); }
+        selectedStrokeIds=[];
+        for (var ls=0; ls<strokes.length; ls+=1) { var pts=strokes[ls].points||[], sx=0, sy=0; for(var sp=0;sp<pts.length;sp+=1){sx+=pts[sp].x;sy+=pts[sp].y;} if(pts.length && sx/pts.length>=lx0 && sx/pts.length<=lx1 && sy/pts.length>=ly0 && sy/pts.length<=ly1) selectedStrokeIds.push(strokes[ls].id); }
+      }
+      setText(stateEl, selectedStrokeIds.length ? selectedStrokeIds.length + " selected" : "Nothing selected"); updateInkButtons(); return stopEvent(event);
+    }
     if (!drawing) return stopEvent(event);
     var eventType = String(event && event.type || "").toLowerCase();
     var hasFinalPoint = event && (
@@ -1046,7 +1066,6 @@
       annotationToggleBtn.setAttribute("aria-expanded", toolsOpen ? "true" : "false");
       annotationToggleBtn.setAttribute("aria-label", toolsOpen ? "Close annotation tools" : "Open annotation tools");
     }
-    setDrawMode(toolsOpen);
     updateBodyMode();
   }
 
@@ -1086,9 +1105,18 @@
   }
 
   function copyInk() {
-    inkClipboard = JSON.parse(JSON.stringify(strokes));
+    var chosen=[]; for(var i=0;i<strokes.length;i+=1) if(!selectedStrokeIds.length || selectedStrokeIds.indexOf(strokes[i].id)>=0) chosen.push(strokes[i]);
+    inkClipboard = JSON.parse(JSON.stringify(chosen));
     setText(stateEl, "Ink copied");
     updateInkButtons();
+  }
+
+  function toggleLasso() { lassoMode=!lassoMode; eraserMode=false; if(eraserInkBtn) eraserInkBtn.className=""; if(lassoInkBtn) lassoInkBtn.className=lassoMode?"active":""; setText(stateEl,lassoMode?"Lasso":"Pen"); }
+  function rotateSelection() {
+    var chosen=[]; for(var i=0;i<strokes.length;i+=1) if(selectedStrokeIds.indexOf(strokes[i].id)>=0) chosen.push(strokes[i]); if(!chosen.length)return;
+    var cx=0,cy=0,n=0; for(var s=0;s<chosen.length;s+=1)for(var p=0;p<chosen[s].points.length;p+=1){cx+=chosen[s].points[p].x;cy+=chosen[s].points[p].y;n+=1;} cx/=n;cy/=n;
+    var oldIds=[]; for(var j=0;j<chosen.length;j+=1){oldIds.push(chosen[j].id); var replacement=JSON.parse(JSON.stringify(chosen[j])); replacement.id=nextInkId("stroke"); replacement.sent=false; for(var q=0;q<replacement.points.length;q+=1){var dx=replacement.points[q].x-cx,dy=replacement.points[q].y-cy;replacement.points[q].x=cx-dy;replacement.points[q].y=cy+dx;} strokes[strokes.indexOf(chosen[j])]=replacement; queueInkOperation("add",{stroke:replacement});}
+    queueInkOperation("delete",{ids:oldIds}); selectedStrokeIds=[]; redrawInk();saveInk();updateInkButtons();
   }
 
   function pasteInk() {
@@ -1155,6 +1183,7 @@
       });
     });
   }
+  function toggleTheme() { darkMode=!darkMode; try { if(darkMode) window.localStorage.setItem("diaryDark","1"); else window.localStorage.removeItem("diaryDark"); } catch(error){} document.documentElement.className=darkMode?"dark":""; setText(liveThemeBtn,darkMode?"Light":"Dark"); if(revision) frameEl.src="/api/live-page/content"+accessQuery(); }
 
   function startProgress(intent) {
     var phases = ["Received", "Reading the page", "Thinking", "Using Hermes", "Checking for HTML updates"];
@@ -1380,6 +1409,7 @@
   add(liveHistoryBtn, "click", openHistory);
   add(liveHistoryCloseBtn, "click", function () { liveHistoryEl.hidden = true; });
   add(liveNewBtn, "click", newPage);
+  add(liveThemeBtn, "click", toggleTheme);
   add(liveHistoryList, "click", function (event) {
     var target = event.target || event.srcElement;
     if (target && target.getAttribute && target.getAttribute("data-history-back")) { openHistory(); return; }
@@ -1404,6 +1434,8 @@
   add(eraserInkBtn, "click", toggleEraser);
   add(copyInkBtn, "click", copyInk);
   add(pasteInkBtn, "click", pasteInk);
+  add(lassoInkBtn, "click", toggleLasso);
+  add(rotateInkBtn, "click", rotateSelection);
   add(window, "focus", function () { refreshInkFromServer(true); });
   add(window, "storage", function (event) {
     var key = event && event.key ? String(event.key) : "";
@@ -1424,6 +1456,7 @@
   });
 
   loadInk();
+  setText(liveThemeBtn, darkMode ? "Light" : "Dark");
   setToolsOpen(false);
   resizeCanvas();
   loadMetadata(true);

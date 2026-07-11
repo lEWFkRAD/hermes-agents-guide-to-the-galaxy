@@ -27,7 +27,7 @@ test("live ink uses the same smooth curve for display and Hermes export", async 
 test("live shell cache-busts the current renderer and Journey assets", async () => {
   const html = await fs.readFile(path.join(repoRoot, "public", "live.html"), "utf8");
   assert.match(html, /live\.css\?v=11/);
-  assert.match(html, /live\.js\?v=17/);
+  assert.match(html, /live\.js\?v=18/);
   assert.match(html, /live-journey\.css\?v=2/);
   assert.match(html, /live-journey\.js\?v=3/);
 });

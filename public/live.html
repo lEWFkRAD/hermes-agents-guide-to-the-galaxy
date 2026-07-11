@@ -21,6 +21,7 @@
         <div class="liveActions">
           <button id="liveHistoryBtn" type="button">History</button>
           <button id="liveNewBtn" type="button">New</button>
+          <button id="liveThemeBtn" type="button">Dark</button>
           <button id="liveSendBtn" type="button" disabled>Send</button>
         <div id="annotationDock" class="annotationDock">
           <button id="annotationToggleBtn" class="annotationToggle" type="button" aria-expanded="false" aria-controls="annotationTools" aria-label="Open annotation tools" title="Annotate">
@@ -45,6 +46,12 @@
               </button>
               <button id="pasteInkBtn" type="button" aria-label="Paste ink" title="Paste ink" disabled>
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5h6M9 3h6v4H9z"/><path d="M7 5H5v16h14V5h-2"/></svg>
+              </button>
+              <button id="lassoInkBtn" type="button" aria-label="Lasso selection" title="Lasso selection">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="11" cy="10" rx="8" ry="6" stroke-dasharray="3 2"/><path d="M17 14c2 1 3 2 3 4 0 2-2 3-4 3"/></svg>
+              </button>
+              <button id="rotateInkBtn" type="button" aria-label="Rotate selection" title="Rotate selection" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2 6"/><path d="M20 5v6h-6"/></svg>
               </button>
               <button id="clearInkBtn" type="button" aria-label="Clear page" title="Clear page" disabled>
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 3h6l1 4H8l1-4Z"/><path d="m7 7 1 14h8l1-14M10 11v6M14 11v6"/></svg>
@@ -80,7 +87,7 @@
         <div id="liveHistoryList"><p>Loading…</p></div>
       </section>
     </main>
-    <script src="/live.js?v=17"></script>
+    <script src="/live.js?v=18"></script>
     <script src="/live-journey.js?v=3"></script>
   </body>
 </html>
