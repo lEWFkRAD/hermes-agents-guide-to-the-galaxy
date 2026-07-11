@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { WorkspaceStore } from "../lib/workspaces.mjs";
+import { WorkspaceStore, atomicWriteFile } from "../lib/workspaces.mjs";
 
 async function withStore(run) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-diary-workspace-"));
@@ -15,6 +15,28 @@ async function withStore(run) {
     await fs.rm(root, { recursive: true, force: true });
   }
 }
+
+test("atomic index writes sync before rename and clean up after failure", async () => {
+  const calls = [];
+  const failure = new Error("simulated disk failure");
+  const operations = {
+    async open(temp, flags) {
+      calls.push(["open", temp, flags]);
+      return {
+        async writeFile() { calls.push(["write"]); },
+        async sync() { calls.push(["sync"]); throw failure; },
+        async close() { calls.push(["close"]); }
+      };
+    },
+    async rename() { calls.push(["rename"]); },
+    async unlink(temp) { calls.push(["unlink", temp]); }
+  };
+
+  await assert.rejects(atomicWriteFile("index.json", "[]", operations), failure);
+  assert.deepEqual(calls.map(([name]) => name), ["open", "write", "sync", "close", "unlink"]);
+  assert.equal(calls[0][2], "wx");
+  assert.equal(calls.some(([name]) => name === "rename"), false);
+});
 
 test("persists a revisioned artifact, vector annotation, and proposal", async () => {
   await withStore(async store => {
