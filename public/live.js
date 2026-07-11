@@ -1205,7 +1205,7 @@
     newPageBusy=true;
     var previousThreadId=hermesThreadId;
     sessionId="";hermesThreadId=newHermesThreadId();
-    removeStorage("diarySessionId");storageSet("diaryHermesThreadId",hermesThreadId);
+    storageRemove("diarySessionId");storageSet("diaryHermesThreadId",hermesThreadId);
     clearInk();hideReply();setToolsOpen(false);closeMenus("");setText(stateEl,"Opening blank page");
     // Retire the old Hermes lane independently. A slow /new must never hold
     // the visible page transition hostage.
