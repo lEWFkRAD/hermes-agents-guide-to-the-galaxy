@@ -24,6 +24,7 @@ const liveTransitionFile = path.join(dataDir, "live-page-transition.json");
 const livePublisherScript = path.join(__dirname, "scripts", "publish-live-page.mjs");
 
 let sessions = [];
+let sessionsSaveQueue = Promise.resolve();
 let imageSeq = 0;
 let liveStateQueue = Promise.resolve();
 let livePendingTransition = null;
@@ -98,18 +99,47 @@ async function archiveOldImages(days) {
 
 async function loadSessions() {
   try {
-    sessions = JSON.parse(await fs.readFile(sessionsFile, "utf8"));
-    if (!Array.isArray(sessions)) sessions = [];
-  } catch {
-    sessions = [];
+    const loaded = JSON.parse(await fs.readFile(sessionsFile, "utf8"));
+    if (!Array.isArray(loaded)) throw new Error("session history must be a JSON array");
+    sessions = loaded;
+  } catch (error) {
+    if (error && error.code === "ENOENT") {
+      sessions = [];
+      return;
+    }
+    const detail = error instanceof SyntaxError ? "session history is not valid JSON" : error.message;
+    throw new Error(`Cannot load session history without risking data loss: ${detail}`);
   }
 }
 
-async function saveSessions() {
+async function saveSessionsInner() {
   await fs.mkdir(dataDir, { recursive: true });
-  const tmp = sessionsFile + ".tmp";
-  await fs.writeFile(tmp, JSON.stringify(sessions));
-  await fs.rename(tmp, sessionsFile);
+  const tmp = `${sessionsFile}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  const backup = sessionsFile + ".bak";
+  let handle;
+  try {
+    handle = await fs.open(tmp, "wx", 0o600);
+    await handle.writeFile(JSON.stringify(sessions), "utf8");
+    await handle.sync();
+    await handle.close();
+    handle = null;
+    try {
+      await fs.copyFile(sessionsFile, backup);
+    } catch (error) {
+      if (!error || error.code !== "ENOENT") throw error;
+    }
+    await fs.rename(tmp, sessionsFile);
+  } catch (error) {
+    if (handle) await handle.close().catch(() => {});
+    await fs.unlink(tmp).catch(() => {});
+    throw error;
+  }
+}
+
+function saveSessions() {
+  const run = sessionsSaveQueue.then(() => saveSessionsInner());
+  sessionsSaveQueue = run.catch(() => {});
+  return run;
 }
 
 function newSessionId() {
@@ -389,6 +419,29 @@ function formatLiveDomAnchors(anchors) {
     return `- stroke ${anchor.strokeId}: selector=${JSON.stringify(anchor.selector)}; element=<${anchor.tag || "unknown"}>${text}; ${flags}; normalizedRect=${JSON.stringify(anchor.rect)}`;
   });
   return `[DOM annotation targets for revision ${anchors[0].baseRevision || "unknown"}]\nThese targets identify what the ink touches or surrounds. Use the ink image to decide whether the gesture means circle, cross-out, underline, arrow, or handwriting. Prefer these selectors and text snippets over guessing by screen position.\n${lines.join("\n")}\n[/DOM annotation targets]\n\n`;
+}
+
+function livePageReadableText(html) {
+  return String(html || "")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, " ")
+    .replace(/<(?:br|\/p|\/div|\/section|\/article|\/li|\/tr|\/h[1-6])\b[^>]*>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n\s*\n\s*\n+/g, "\n\n")
+    .trim()
+    .slice(0, 12000);
+}
+
+function formatLivePageSnapshot(page, html) {
+  if (!page || !html) return "";
+  const readable = livePageReadableText(html);
+  return `[Current Live Page]\nTitle: ${page.title || "Untitled"}\nRevision: ${page.revision || "unknown"}\nThe annotation was made directly over this page. Treat this snapshot and the DOM targets as available context; do not ask the user to provide the HTML or identify the page again.\n\n${readable}\n[/Current Live Page]\n\n`;
 }
 
 function buildMessages({ text, imageDataUrl, history = [], intent = "" }) {
@@ -1105,6 +1158,7 @@ async function serveArtifact(req, res) {
 async function handleSend(req, res) {
   let liveInkClaimId = "";
   let liveDomAnchors = [];
+  let livePageContext = "";
   try {
     const body = JSON.parse(await readBody(req));
     const target = "hermes";
@@ -1117,11 +1171,16 @@ async function handleSend(req, res) {
     const liveInkSendId = typeof body.liveInkSendId === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(body.liveInkSendId)
       ? body.liveInkSendId : "";
     const liveInkStrokeIds = Array.isArray(body.liveInkStrokeIds) ? body.liveInkStrokeIds : [];
-    if (isLivePageSource && target === "hermes" && !body.stream && liveInkSendId && liveInkStrokeIds.length) {
+    if (isLivePageSource && target === "hermes" && liveInkSendId && liveInkStrokeIds.length) {
       try {
         const claimed = await withLiveState(async () => {
           const claim = await liveInkStore.claimSend({ sendId: liveInkSendId, strokeIds: liveInkStrokeIds });
-          return { claim, anchors: claim.status === "claimed" ? collectLiveDomAnchors(liveInkStore.snapshot(), liveInkStrokeIds) : [] };
+          return {
+            claim,
+            anchors: claim.status === "claimed" ? collectLiveDomAnchors(liveInkStore.snapshot(), liveInkStrokeIds) : [],
+            page: livePageStore.metadata(),
+            html: livePageStore.document()
+          };
         });
         const claim = claimed.claim;
         if (claim.status === "complete") {
@@ -1129,6 +1188,7 @@ async function handleSend(req, res) {
           return;
         }
         liveDomAnchors = claimed.anchors;
+        livePageContext = formatLivePageSnapshot(claimed.page, claimed.html);
         liveInkClaimId = liveInkSendId;
       } catch (error) {
         send(res, Number(error.status) || 409, JSON.stringify({ ok: false, error: error.message }));
@@ -1247,7 +1307,7 @@ async function handleSend(req, res) {
         rawTranscription,
         cleanedTranscription,
         source: isLivePageSource ? "live-page" : ""
-      }) + formatLiveDomAnchors(liveDomAnchors) + noteText;
+      }) + livePageContext + formatLiveDomAnchors(liveDomAnchors) + noteText;
 
       const wantStream = !!body.stream;
       if (wantStream) {
@@ -1319,14 +1379,11 @@ async function handleSend(req, res) {
         durationMs: Date.now() - startedCh, intent, tags, pageChanged
       });
       if (wantStream) {
-        // The platform adapter returns a completed turn. Reveal it in bounded
-        // chunks so old Kindle WebKit receives the entire response through its
-        // incremental XHR path instead of one easily-truncated repaint.
+        // The platform adapter returns a completed turn. Deliver it in bounded
+        // writes so old Kindle WebKit receives the entire response reliably,
+        // without adding theatrical delays that look like model streaming.
         const chunks = result.text.match(/[\s\S]{1,320}/g) || [];
-        for (const chunk of chunks) {
-          res.write(chunk);
-          await new Promise(resolve => setTimeout(resolve, 70));
-        }
+        for (const chunk of chunks) res.write(chunk);
         res.write(RS + JSON.stringify({ title: session.title, pageChanged, page: pageChanged ? afterLivePage : undefined }));
         res.end();
       } else {
@@ -1509,7 +1566,9 @@ async function handleSessions(req, res) {
 // Serve a stored handwriting image by name, checking the hot dir then archive.
 async function serveImage(req, res) {
   const url = new URL(req.url, "http://diary.local");
-  const name = path.basename(decodeURIComponent(url.pathname).replace(/^\/img\//, ""));
+  let name;
+  try { name = path.basename(decodeURIComponent(url.pathname).replace(/^\/img\//, "")); }
+  catch { send(res, 400, "Malformed URL", "text/plain; charset=utf-8"); return; }
   if (!name || name.indexOf("..") >= 0) {
     send(res, 400, "Bad request", "text/plain; charset=utf-8");
     return;
@@ -1528,7 +1587,9 @@ async function serveImage(req, res) {
 
 async function serveStatic(req, res) {
   const url = new URL(req.url, "http://diary.local");
-  let rel = decodeURIComponent(url.pathname);
+  let rel;
+  try { rel = decodeURIComponent(url.pathname); }
+  catch { send(res, 400, "Malformed URL", "text/plain; charset=utf-8"); return; }
   if (isRemoteHost(req) && /^\/remote\/[^/]+(?:\/live\/?)?$/.test(rel)) {
     if (!remoteKeyOk(req)) {
       send(res, 401, "Unauthorized", "text/plain; charset=utf-8");
@@ -1539,7 +1600,8 @@ async function serveStatic(req, res) {
   if (rel === "/" || rel === "/index.html") rel = "/live.html";
   if (rel === "/live" || rel === "/live/") rel = "/live.html";
   const file = path.normalize(path.join(publicDir, rel));
-  if (!file.startsWith(publicDir)) {
+  const relative = path.relative(publicDir, file);
+  if (relative === ".." || relative.startsWith(".." + path.sep) || path.isAbsolute(relative)) {
     send(res, 403, "Forbidden", "text/plain; charset=utf-8");
     return;
   }

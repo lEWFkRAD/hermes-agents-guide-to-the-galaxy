@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
+    "backup": "node scripts/backup-data.mjs",
     "test": "node --test"
   }
 }

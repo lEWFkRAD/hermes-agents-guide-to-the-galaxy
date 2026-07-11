@@ -27,7 +27,7 @@ test("live ink uses the same smooth curve for display and Hermes export", async 
 test("live shell cache-busts the current renderer and Journey assets", async () => {
   const html = await fs.readFile(path.join(repoRoot, "public", "live.html"), "utf8");
   assert.match(html, /live\.css\?v=15/);
-  assert.match(html, /live\.js\?v=25/);
+  assert.match(html, /live\.js\?v=27/);
   assert.match(html, /class="labeledTool"/);
   assert.match(html, /id="hermesToggleBtn"/);
   assert.match(html, /id="moreToggleBtn"/);
@@ -74,7 +74,7 @@ test("annotation tools default to a compact Kindle-friendly reading mode", async
   assert.doesNotMatch(source, /removeStorage\(/);
   assert.match(source, /requestFrame\(renderMovePreview\)/);
   assert.match(source, /streamPaintTimer/);
-  assert.match(source, /slow \/new must never hold/);
+  assert.match(source, /Retire the old Hermes lane only after the replacement page exists/);
 });
 
 test("main Kindle notebook defaults to the tool-enabled Hermes channel", async () => {
@@ -129,6 +129,9 @@ test("live drawing keeps coalesced samples, final points, and bounded relative t
   assert.match(source, /firstPoint\.t = 0/);
   assert.match(source, /point\.t = Math\.max\(0, Math\.min\(MAX_POINT_T/);
   assert.match(source, /pointTime <= MAX_POINT_T\) point\.t = Math\.round\(pointTime\)/);
+  assert.match(source, /if \(drawing && currentStroke\) commitCurrentStroke\(\)/);
+  assert.match(source, /add\(document, "pointerup", endInk\)/);
+  assert.doesNotMatch(source, /add\(element, "pointerleave", endInk\)/);
 });
 
 test("lost send responses reuse the persisted claim without deleting visible ink", async () => {
@@ -143,4 +146,32 @@ test("lost send responses reuse the persisted claim without deleting visible ink
   assert.match(sender, /keepPendingInkSend\(\{ id: liveInkSendId, strokeIds: pendingIds \}\)/);
   assert.match(sender, /clearPendingInkSend\(liveInkSendId\)/);
   assert.doesNotMatch(sender, /queueInkOperation\("delete", \{ ids: pendingIds \}\)/);
+});
+
+test("new page preserves active work until the replacement page succeeds", async () => {
+  const source = await fs.readFile(path.join(repoRoot, "public", "live.js"), "utf8");
+  const newPage = source.slice(
+    source.indexOf("function newPage"),
+    source.indexOf("function toggleTheme")
+  );
+  const requestIndex = newPage.indexOf('requestJson("POST", "/api/live-page/template"');
+  const clearIndex = newPage.indexOf("clearInk()");
+  const threadIndex = newPage.indexOf('hermesThreadId=newHermesThreadId()');
+
+  assert.ok(requestIndex >= 0);
+  assert.ok(clearIndex > requestIndex);
+  assert.ok(threadIndex > requestIndex);
+  assert.match(newPage, /if \(error\) \{ setText\(stateEl, "Could not open blank page"\); return; \}/);
+});
+
+test("streamed live annotations are claimed before Hermes runs", async () => {
+  const server = await fs.readFile(path.join(repoRoot, "server.mjs"), "utf8");
+  const claimGate = server.slice(
+    server.indexOf("if (isLivePageSource && target"),
+    server.indexOf("let endpoint = body.endpoint")
+  );
+
+  assert.match(claimGate, /liveInkSendId && liveInkStrokeIds\.length/);
+  assert.doesNotMatch(claimGate, /!body\.stream/);
+  assert.match(claimGate, /liveInkStore\.claimSend/);
 });

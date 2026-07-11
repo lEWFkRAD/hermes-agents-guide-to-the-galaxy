@@ -421,6 +421,9 @@ test("live annotation send is claimed once and retries return the cached reply",
     assert.match(sentToAdapter.text, /Intent: tasks/);
     assert.match(sentToAdapter.text, /Notebook tags: #client/);
     assert.match(sentToAdapter.text, /DOM annotation targets/);
+    assert.match(sentToAdapter.text, /\[Current Live Page\]/);
+    assert.match(sentToAdapter.text, /The annotation was made directly over this page/);
+    assert.match(sentToAdapter.text, /do not ask the user to provide the HTML/);
     assert.match(sentToAdapter.text, /\[data-live-region=\\"client-total\\"\]/);
     assert.match(sentToAdapter.text, /Top client total/);
     assert.match(sentToAdapter.text, /mark encloses\/centers on element/);

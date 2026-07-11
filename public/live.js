@@ -896,6 +896,10 @@
 
   function startInk(event) {
     if (!drawMode || sendBusy || pendingInkSend) return true;
+    // Fast pen input can deliver the next down before the previous up is
+    // observed. Persist that completed geometry instead of orphaning it when
+    // currentStroke is replaced below.
+    if (drawing && currentStroke) commitCurrentStroke();
     if(moveMode&&selectedStrokeIds.length){movingSelection=true;moveStart=pointFromEvent(event);moveOriginals=[];for(var mi=0;mi<strokes.length;mi+=1)if(selectedStrokeIds.indexOf(strokes[mi].id)>=0)moveOriginals.push({index:mi,stroke:JSON.parse(JSON.stringify(strokes[mi]))});return stopEvent(event);}
     if (lassoMode) { lassoing = true; lassoPoints = [pointFromEvent(event)]; return stopEvent(event); }
     if (eraserMode) {
@@ -1023,7 +1027,9 @@
       add(element, "pointermove", moveInk);
       add(element, "pointerup", endInk);
       add(element, "pointercancel", endInk);
-      add(element, "pointerleave", endInk);
+      // Pointer capture keeps a fast edge stroke alive outside the canvas.
+      // A document fallback covers older implementations that lose capture.
+      add(document, "pointerup", endInk);
     } else if (window.MSPointerEvent) {
       add(element, "MSPointerDown", startInk);
       add(element, "MSPointerMove", moveInk);
@@ -1204,15 +1210,15 @@
     if (sendBusy || drawing || newPageBusy) return;
     newPageBusy=true;
     var previousThreadId=hermesThreadId;
-    sessionId="";hermesThreadId=newHermesThreadId();
-    storageRemove("diarySessionId");storageSet("diaryHermesThreadId",hermesThreadId);
-    clearInk();hideReply();setToolsOpen(false);closeMenus("");setText(stateEl,"Opening blank page");
-    // Retire the old Hermes lane independently. A slow /new must never hold
-    // the visible page transition hostage.
-    if(previousThreadId)requestJson("POST","/api/channel/reset",{chatId:previousThreadId},function(){});
+    setText(stateEl,"Opening blank page");
     requestJson("POST", "/api/live-page/template", { template: "blank", baseRevision: revision, confirm: "replace" }, function (error) {
       newPageBusy=false;
       if (error) { setText(stateEl, "Could not open blank page"); return; }
+      sessionId="";hermesThreadId=newHermesThreadId();
+      storageRemove("diarySessionId");storageSet("diaryHermesThreadId",hermesThreadId);
+      clearInk();hideReply();setToolsOpen(false);closeMenus("");
+      // Retire the old Hermes lane only after the replacement page exists.
+      if(previousThreadId)requestJson("POST","/api/channel/reset",{chatId:previousThreadId},function(){});
       loadMetadata(true);setText(stateEl,"New page");
     });
   }

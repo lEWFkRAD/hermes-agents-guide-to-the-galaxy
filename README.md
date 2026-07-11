@@ -53,8 +53,8 @@ bookmark it. Config is via env vars (all optional):
 - **Two display modes** (toggle in Options):
   - **Split** — writing on top, Hermes's latest reply in a pane below.
   - **Riddle** — your ink dissolves and Hermes's words form on the page itself.
-- **Live streaming** — the reply appears token-by-token as Hermes generates it
-  (falls back to wait-then-reveal if the browser can't stream; toggle in Options).
+- **Reliable reply delivery** — Hermes completes its tool-assisted turn, then the
+  bridge sends the full reply in Kindle-safe chunks without adding replay delays.
 - **Landscape mode** — rotates the whole UI for a wider writing surface.
 - **Sessions / History** — every entry is a conversation with full context;
   browse, reopen, continue, or delete past entries in the History popup.
@@ -189,6 +189,14 @@ tailscale funnel --https=443 off
 
 Treat the complete bookmark as a password. Rotate `DIARY_REMOTE_KEY` immediately
 if it is copied into chat, logs, screenshots, or any system you do not trust.
+
+## Backups
+
+Run `npm run backup` to create a verified, timestamped snapshot under `backups/`.
+Each generation includes a SHA-256 manifest, and the newest 14 generations are
+retained by default. Set `DIARY_BACKUP_DIR` to keep copies on another drive and
+`DIARY_BACKUP_KEEP` to change retention. A daily Windows task named
+`Hermes-Diary-Backup` runs this command on the installed machine.
 
 ## Data & privacy
 
