@@ -32,7 +32,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
-          repository: NousResearch/hermes-agent
+          repository: lEWFkRAD/hermes-agent
+          ref: feat/kindle-platform
           path: .hermes-agent
       - uses: actions/setup-python@v5
         with:
