@@ -1456,7 +1456,11 @@
   bindInkEvents(canvasEl);
   add(window, "resize", resizeCanvas);
   add(frameEl, "load", hideMessage);
-  add(annotationToggleBtn, "click", function () { closeMenus("pen"); setToolsOpen(!toolsOpen); });
+  add(annotationToggleBtn, "click", function () {
+    closeMenus("pen");
+    if (!drawMode) setDrawMode(true);
+    setToolsOpen(!toolsOpen);
+  });
   add(hermesToggleBtn, "click", function () { toggleMenu("hermes", hermesToolsEl, hermesToggleBtn); });
   add(moreToggleBtn, "click", function () { toggleMenu("more", moreToolsEl, moreToggleBtn); });
   add(drawModeBtn, "click", function () { setDrawMode(!drawMode); });
