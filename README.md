@@ -6,6 +6,12 @@ Hermes answers, and the reply forms on the page or in a side pane. Runs as a
 tiny local web app because a stock Scribe can't sideload native apps — the
 browser is the only channel, so the app is built to feel like one.
 
+[![CI](https://github.com/lEWFkRAD/hermes-agents-guide-to-the-galaxy/actions/workflows/ci.yml/badge.svg)](https://github.com/lEWFkRAD/hermes-agents-guide-to-the-galaxy/actions/workflows/ci.yml)
+
+Community contributions, including reviewed AI-assisted contributions, are
+welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).
+This project is available under the [MIT License](LICENSE).
+
 ## How it works
 
 ```

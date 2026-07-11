@@ -1,0 +1,40 @@
+name: Bug report
+description: Report a reproducible problem without private content or secrets.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Never include tokens, client data, diary content, or unsanitized logs.
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, versions, and Kindle model/browser if relevant.
+    validations:
+      required: true
+  - type: dropdown
+    id: device
+    attributes:
+      label: Reproduced on a physical Kindle Scribe?
+      options: ["Yes", "No", "Not applicable"]
+    validations:
+      required: true
