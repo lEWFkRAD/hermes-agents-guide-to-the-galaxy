@@ -317,6 +317,17 @@ function choiceText(json) {
   return JSON.stringify(json, null, 2);
 }
 
+function reconcileLivePageReply(text, pageChanged, page) {
+  const reply = String(text || "").trim();
+  if (!pageChanged) return reply;
+  const title = page?.title ? ` “${page.title}”` : "";
+  const deniesPublish = /\b(?:cannot|can't|could not|couldn't|unable to)\b[^.\n]{0,100}\b(?:generate|create|make|publish|display|edit|update|write)\b[^.\n]{0,80}\b(?:html|live page|page)\b/i.test(reply)
+    || /\b(?:cannot|can't|could not|couldn't|unable to)\b[^.\n]{0,100}\b(?:directly to|on)\b[^.\n]{0,50}\bkindle\b/i.test(reply);
+  if (deniesPublish) return `Done — I updated the page${title}.`;
+  if (/\b(?:done|updated|published|created|made)\b/i.test(reply)) return reply;
+  return `Done — I updated the page${title}.\n\n${reply}`;
+}
+
 const KINDLE_INTENTS = new Map([
   ["summarize", "Summarize the current page or note. Start with the answer in one short paragraph, then add only the most useful detail."],
   ["tasks", "Extract tasks. Group them by owner, due date, and uncertainty. If a task is inferred from handwriting, label it inferred."],
@@ -1247,7 +1258,10 @@ async function handleSend(req, res) {
       }
 
       let result;
-      const beforeLiveRevision = isLivePageSource ? await withLiveState(() => livePageStore.metadata().revision) : "";
+      // Snapshot every Kindle request, including older notebook clients. Tools
+      // may publish while Hermes is answering even when the client did not
+      // identify itself as the Live Page.
+      const beforeLiveRevision = await withLiveState(() => livePageStore.metadata().revision);
       try {
         result = await callKindleChannel({
           text: noteText,
@@ -1267,9 +1281,10 @@ async function handleSend(req, res) {
         }
         return;
       }
-      const afterLivePage = isLivePageSource ? await withLiveState(() => livePageStore.metadata()) : null;
+      const afterLivePage = await withLiveState(() => livePageStore.metadata());
       const afterLiveRevision = afterLivePage ? afterLivePage.revision : "";
       const pageChanged = !!beforeLiveRevision && !!afterLiveRevision && beforeLiveRevision !== afterLiveRevision;
+      result.text = reconcileLivePageReply(result.text, pageChanged, afterLivePage);
 
       if (!result.text || !result.text.trim()) {
         if (liveInkClaimId) await withLiveState(() => liveInkStore.releaseSend(liveInkClaimId)).catch(() => {});
