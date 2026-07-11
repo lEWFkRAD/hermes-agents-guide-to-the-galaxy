@@ -129,6 +129,7 @@ body.toolsOpen .annotationToggle,
 .toolActions,
 .intentActions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 4px;
 }

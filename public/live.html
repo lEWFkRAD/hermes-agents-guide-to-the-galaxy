@@ -11,7 +11,7 @@
         }
       } catch (error) {}
     </script>
-    <link rel="stylesheet" href="/live.css?v=10">
+    <link rel="stylesheet" href="/live.css?v=11">
     <link rel="stylesheet" href="/live-journey.css?v=2">
   </head>
   <body class="livePage viewMode toolsCollapsed">
@@ -36,6 +36,15 @@
               </button>
               <button id="undoInkBtn" type="button" aria-label="Undo" title="Undo" disabled>
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7 4 12l5 5"/><path d="M5 12h8a6 6 0 0 1 6 6"/></svg>
+              </button>
+              <button id="eraserInkBtn" type="button" aria-label="Toggle eraser" title="Eraser">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 21-4-4L14.5 5.5a2.1 2.1 0 0 1 3 0l1 1a2.1 2.1 0 0 1 0 3L7 21Z"/><path d="m11 9 4 4M7 21h12"/></svg>
+              </button>
+              <button id="copyInkBtn" type="button" aria-label="Copy ink" title="Copy ink" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="12" rx="1"/><path d="M16 8V4H5a1 1 0 0 0-1 1v11h4"/></svg>
+              </button>
+              <button id="pasteInkBtn" type="button" aria-label="Paste ink" title="Paste ink" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5h6M9 3h6v4H9z"/><path d="M7 5H5v16h14V5h-2"/></svg>
               </button>
               <button id="clearInkBtn" type="button" aria-label="Clear page" title="Clear page" disabled>
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 3h6l1 4H8l1-4Z"/><path d="m7 7 1 14h8l1-14M10 11v6M14 11v6"/></svg>
@@ -71,7 +80,7 @@
         <div id="liveHistoryList"><p>Loading…</p></div>
       </section>
     </main>
-    <script src="/live.js?v=16"></script>
+    <script src="/live.js?v=17"></script>
     <script src="/live-journey.js?v=3"></script>
   </body>
 </html>

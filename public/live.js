@@ -75,6 +75,9 @@
   var sendInkBtn = document.getElementById("sendInkBtn");
   var intentBtns = document.getElementsByClassName ? document.getElementsByClassName("intentBtn") : [];
   var clearInkBtn = document.getElementById("clearInkBtn");
+  var eraserInkBtn = document.getElementById("eraserInkBtn");
+  var copyInkBtn = document.getElementById("copyInkBtn");
+  var pasteInkBtn = document.getElementById("pasteInkBtn");
   var backBtn = document.getElementById("backBtn");
   var liveHistoryBtn = document.getElementById("liveHistoryBtn");
   var liveNewBtn = document.getElementById("liveNewBtn");
@@ -94,6 +97,8 @@
   var drawing = false;
   var drawMode = false;
   var toolsOpen = false;
+  var eraserMode = false;
+  var inkClipboard = [];
   var INK_STORAGE_KEY = "livePageInkV1";
   var INK_CLIENT_KEY = "livePageInkClientV2";
   var INK_MIGRATION_KEY = "livePageInkMigratedV2";
@@ -309,6 +314,8 @@
     drawModeBtn.disabled = sendBusy || !!pendingInkSend;
     sendInkBtn.disabled = sendBusy || !inkSyncReady || hasPendingAddOperations() || (!pendingInkSend && !unsentStrokes().length);
     if (liveSendBtn) liveSendBtn.disabled = sendInkBtn.disabled;
+    if (copyInkBtn) copyInkBtn.disabled = sendBusy || !strokes.length;
+    if (pasteInkBtn) pasteInkBtn.disabled = sendBusy || !inkClipboard.length;
   }
 
   function saveInk() {
@@ -862,6 +869,19 @@
 
   function startInk(event) {
     if (!drawMode || sendBusy || pendingInkSend) return true;
+    if (eraserMode) {
+      var eraserPoint = pointFromEvent(event), removedIds = [];
+      for (var eraseIndex = strokes.length - 1; eraseIndex >= 0; eraseIndex -= 1) {
+        var erasePoints = strokes[eraseIndex].points || [], hit = false;
+        for (var ep = 0; ep < erasePoints.length; ep += 1) {
+          if (Math.abs(erasePoints[ep].x - eraserPoint.x) < .025 && Math.abs(erasePoints[ep].y - eraserPoint.y) < .025) { hit = true; break; }
+        }
+        if (hit) { removedIds.push(strokes[eraseIndex].id); strokes.splice(eraseIndex, 1); }
+      }
+      if (removedIds.length) { redrawInk(); saveInk(); queueInkOperation("delete", { ids: removedIds }); }
+      updateInkButtons();
+      return stopEvent(event);
+    }
     if (event.pointerId !== undefined && canvasEl.setPointerCapture) {
       try { canvasEl.setPointerCapture(event.pointerId); } catch (error) {}
     }
@@ -1056,6 +1076,29 @@
   function showReply(text) {
     setText(replyTextEl, text || "Hermes finished.");
     replyEl.hidden = false;
+  }
+
+  function toggleEraser() {
+    eraserMode = !eraserMode;
+    if (eraserInkBtn) eraserInkBtn.className = eraserMode ? "active" : "";
+    if (eraserMode && !drawMode) setDrawMode(true);
+    setText(stateEl, eraserMode ? "Eraser" : "Pen");
+  }
+
+  function copyInk() {
+    inkClipboard = JSON.parse(JSON.stringify(strokes));
+    setText(stateEl, "Ink copied");
+    updateInkButtons();
+  }
+
+  function pasteInk() {
+    for (var i = 0; i < inkClipboard.length; i += 1) {
+      var pasted = JSON.parse(JSON.stringify(inkClipboard[i]));
+      pasted.id = nextInkId("stroke"); pasted.clientId = deviceId; pasted.sent = false; pasted.createdAt = (new Date()).getTime();
+      for (var p = 0; p < pasted.points.length; p += 1) { pasted.points[p].x = Math.min(.99, pasted.points[p].x + .03); pasted.points[p].y = Math.min(.99, pasted.points[p].y + .03); }
+      pasted.anchors = captureStrokeAnchors(pasted); strokes.push(pasted); queueInkOperation("add", { stroke: pasted });
+    }
+    redrawInk(); saveInk(); updateInkButtons(); setText(stateEl, "Ink pasted");
   }
 
   function hideReply() {
@@ -1358,6 +1401,9 @@
   add(closeReplyBtn, "click", hideReply);
   add(undoInkBtn, "click", undoInk);
   add(clearInkBtn, "click", clearInk);
+  add(eraserInkBtn, "click", toggleEraser);
+  add(copyInkBtn, "click", copyInk);
+  add(pasteInkBtn, "click", pasteInk);
   add(window, "focus", function () { refreshInkFromServer(true); });
   add(window, "storage", function (event) {
     var key = event && event.key ? String(event.key) : "";
