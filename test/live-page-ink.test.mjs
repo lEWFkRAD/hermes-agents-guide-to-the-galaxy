@@ -267,3 +267,17 @@ test("claims a synced annotation once and replays its completed result", async (
     assert.equal(explicitResend.status, "claimed");
   });
 });
+
+test("startup releases an incomplete send left by a stopped server", async () => {
+  await withStore(async store => {
+    await store.applyBatch({
+      clientId: "device-a",
+      ops: [{ id: "op-add-stranded", type: "add", stroke: makeStroke("stroke-stranded") }]
+    });
+    assert.equal((await store.claimSend({ sendId: "send-stranded", strokeIds: ["stroke-stranded"] })).status, "claimed");
+
+    const reopened = new LiveInkStore(store.file.replace(/live-page-ink\.json$/, ""));
+    await reopened.init();
+    assert.equal((await reopened.claimSend({ sendId: "send-retry", strokeIds: ["stroke-stranded"] })).status, "claimed");
+  });
+});
