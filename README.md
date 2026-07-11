@@ -18,6 +18,22 @@ Kindle platform adapter, and receives the completed tool-assisted agent reply.
 
 ## Run it
 
+First install and enable the optional Hermes platform plugin. It lives in
+Hermes's persistent user-plugin directory—not inside the Hermes source tree—so
+normal Hermes updates do not delete it:
+
+```powershell
+hermes plugins install lEWFkRAD/hermes-agents-guide-to-the-galaxy/kindle-plugin --enable
+hermes gateway restart
+Invoke-RestMethod http://127.0.0.1:8793/health
+```
+
+The installer prompts for `KINDLE_INGEST_TOKEN` and saves it in Hermes's local
+environment file. Set `KINDLE_ALLOWED_USERS` to the stable identity used by the
+bridge (for example, `jeff`). Keep `KINDLE_ALLOW_ALL_USERS` unset.
+
+Then start the diary bridge:
+
 ```
 npm start          # node server.mjs — listens on 0.0.0.0:8791
 ```

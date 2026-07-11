@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Hermes Agents Guide to the Galaxy</title>
-    <link rel="stylesheet" href="/styles.css?v=26">
+    <link rel="stylesheet" href="/styles.css?v=27">
   </head>
   <body>
     <main class="diary">
@@ -107,23 +107,26 @@
               <details id="toolPalette" class="toolPalette">
                 <summary aria-label="Open drawing tools" title="Drawing tools">&#9998;</summary>
                 <div class="toolPanel">
-                <button id="undoBtn" type="button">Undo</button>
-                <button id="clearBtn" type="button">Clear</button>
-                <button id="eraserBtn" type="button" aria-label="Toggle eraser" title="Eraser"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4-4L14.5 5.5a2.1 2.1 0 0 1 3 0l1 1a2.1 2.1 0 0 1 0 3L7 21Z"/><path d="m11 9 4 4"/><path d="M7 21h12"/></svg></button>
-                <button id="lassoBtn" type="button">Lasso</button>
-                <button id="copyBtn" type="button" disabled>Copy</button>
-                <button id="pasteBtn" type="button" disabled>Paste</button>
-                <button id="rotateSelectionBtn" type="button" disabled>Rotate 90</button>
-                <button id="zoomIn" type="button" aria-label="Zoom in">+</button>
-                <button id="zoomOut" type="button" aria-label="Zoom out">&#8722;</button>
-                <button id="panBtn" type="button" aria-label="Pan"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg></button>
-                <button id="resetView" type="button" aria-label="Reset view">1:1</button>
+                <div class="toolActions" aria-label="Drawing actions">
+                  <button id="undoBtn" type="button" aria-label="Undo" title="Undo"><svg viewBox="0 0 24 24"><path d="M9 7 4 12l5 5"/><path d="M5 12h8a6 6 0 0 1 6 6"/></svg></button>
+                  <button id="clearBtn" type="button" aria-label="Clear page" title="Clear page"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 3h6l1 4H8l1-4Z"/><path d="m7 7 1 14h8l1-14M10 11v6M14 11v6"/></svg></button>
+                  <button id="eraserBtn" type="button" aria-label="Toggle eraser" title="Eraser"><svg viewBox="0 0 24 24"><path d="m7 21-4-4L14.5 5.5a2.1 2.1 0 0 1 3 0l1 1a2.1 2.1 0 0 1 0 3L7 21Z"/><path d="m11 9 4 4M7 21h12"/></svg></button>
+                  <button id="lassoBtn" type="button" aria-label="Lasso selection" title="Lasso selection"><svg viewBox="0 0 24 24"><ellipse cx="11" cy="10" rx="8" ry="6" stroke-dasharray="3 2"/><path d="M17 14c2 1 3 2 3 4 0 2-2 3-4 3-1 0-2-.5-2-1.5S15 18 16 18"/></svg></button>
+                  <button id="copyBtn" type="button" aria-label="Copy selection" title="Copy selection" disabled><svg viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="12" rx="1"/><path d="M16 8V4H5a1 1 0 0 0-1 1v11h4"/></svg></button>
+                  <button id="pasteBtn" type="button" aria-label="Paste selection" title="Paste selection" disabled><svg viewBox="0 0 24 24"><path d="M9 5h6M9 3h6v4H9z"/><path d="M7 5H5v16h14V5h-2"/><path d="M9 12h6M12 9l3 3-3 3"/></svg></button>
+                  <button id="rotateSelectionBtn" type="button" aria-label="Rotate selection 90 degrees" title="Rotate selection 90 degrees" disabled><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2 6"/><path d="M20 5v6h-6"/></svg></button>
+                  <button id="zoomIn" type="button" aria-label="Zoom in" title="Zoom in"><svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6M10 7v6M7 10h6"/></svg></button>
+                  <button id="zoomOut" type="button" aria-label="Zoom out" title="Zoom out"><svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6M7 10h6"/></svg></button>
+                  <button id="panBtn" type="button" aria-label="Pan canvas" title="Pan canvas"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg></button>
+                  <button id="resetView" type="button" aria-label="Reset view to actual size" title="Reset view"><span>1:1</span></button>
+                </div>
                 <label class="paletteRange" for="strokeWidth"><span>Ink <output id="strokeWidthValue">3.5</output></span><input id="strokeWidth" type="range" min="2" max="8" step="0.5" value="3.5"></label>
-                <label><input id="darkOn" type="checkbox"> Dark</label>
-                <label><input id="fastInk" type="checkbox"> Fast ink</label>
-                <label><input id="streamOn" type="checkbox" checked> Stream</label>
-                <button id="modeBtn" type="button">Mode: Split</button>
-                <button id="rotateBtn" type="button">Rotate page</button>
+                <div class="paletteToggles" aria-label="Display options">
+                  <label title="Dark mode"><input id="darkOn" type="checkbox"><svg viewBox="0 0 24 24"><path d="M20 15.5A8 8 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"/></svg><span>Dark</span></label>
+                  <label title="Fast ink"><input id="fastInk" type="checkbox"><svg viewBox="0 0 24 24"><path d="m13 2-8 12h7l-1 8 8-12h-7l1-8Z"/></svg><span>Fast</span></label>
+                  <label title="Stream replies"><input id="streamOn" type="checkbox" checked><svg viewBox="0 0 24 24"><path d="M4 8c3-3 5 3 8 0s5 3 8 0M4 14c3-3 5 3 8 0s5 3 8 0"/></svg><span>Stream</span></label>
+                </div>
+                <button id="rotateBtn" type="button" aria-label="Rotate page" title="Rotate page"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2 6"/><path d="M20 5v6h-6"/></svg></button>
                 </div>
               </details>
               <div id="emptyHint">Write here, then tap Send.</div>
@@ -172,7 +175,7 @@
         </details>
       </section>
     </main>
-    <script src="/app.js?v=29"></script>
+    <script src="/app.js?v=30"></script>
     <script src="/workspace.js?v=3"></script>
   </body>
 </html>

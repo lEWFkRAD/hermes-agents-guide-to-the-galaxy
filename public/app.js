@@ -81,7 +81,6 @@
   var fastInkEl = document.getElementById("fastInk");
   var streamEl = document.getElementById("streamOn");
   var rotateBtn = document.getElementById("rotateBtn");
-  var modeBtn = document.getElementById("modeBtn");
   var pgUp = document.getElementById("pgUp");
   var pgDn = document.getElementById("pgDn");
   var pgUp2 = document.getElementById("pgUp2");
@@ -99,7 +98,6 @@
   var rotateSelectionBtn = document.getElementById("rotateSelectionBtn");
 
   var landscape = false;
-  var mode = "split"; // "split" | "riddle"
   var darkMode = false;
 
   // On-screen ink flips with the theme (light strokes on dark paper). The
@@ -108,15 +106,13 @@
     return darkMode ? "#e9e7e0" : "#111";
   }
 
-  // Where the current reply / thinking / error text goes, per mode.
   function activeOut() {
-    return mode === "split" ? reply : pageText;
+    return reply;
   }
 
   var ctx = canvas.getContext("2d");
   var drawing = false;
   var dirty = false;
-  var animating = false;
   var last = null;
   var pathEnd = null;
   var queue = [];
@@ -237,12 +233,6 @@
   // The Riddle dissolve. Each step is a full-canvas repaint, and on e-ink a
   // repaint is a slow ghosting flash — so FEWER steps look more deliberate and
   // less janky than many. Three is the sweet spot: dark, faded, gone.
-  var DISSOLVE = [
-    { color: "#6b6558", widthScale: 0.7, dy: 8 },
-    { color: "#b3ada0", widthScale: 0.45, dy: 20 },
-    { color: "#dcd7c9", widthScale: 0.3, dy: 34 }
-  ];
-  var DISSOLVE_STEP_MS = 150;
   // Reveal a whole line at a time rather than a few words: on e-ink, each DOM
   // update forces a partial refresh, so 6 updates read far cleaner than 30.
   var REVEAL_WORDS_PER_TICK = 8;
@@ -607,7 +597,7 @@
   }
 
   function undoStroke() {
-    if (drawing || erasing || animating || !historyActions.length) return;
+    if (drawing || erasing || !historyActions.length) return;
     var action = historyActions.pop();
     if (action.type === "draw") {
       var drawIndex = strokes.indexOf(action.stroke);
@@ -666,36 +656,6 @@
       changed = true;
     }
     if (changed) redrawStrokes();
-  }
-
-  function dissolveAway(done) {
-    animating = true;
-    revealGen += 1; // cancel any reveal still ticking
-    var step = 0;
-    function tick() {
-      if (step < DISSOLVE.length) {
-        var s = DISSOLVE[step];
-        clearScreen();
-        for (var i = 0; i < strokes.length; i += 1) {
-          drawStoredStroke(strokes[i], s);
-        }
-        pageText.style.color = s.color;
-        step += 1;
-        window.setTimeout(tick, DISSOLVE_STEP_MS);
-        return;
-      }
-      clearScreen();
-      ctx.strokeStyle = inkColor();
-      strokes = [];
-      historyActions = [];
-      currentStroke = null;
-      dirty = false;
-      pageText.innerHTML = "";
-      pageText.style.color = "";
-      animating = false;
-      done();
-    }
-    tick();
   }
 
   function formReply(text) {
@@ -800,7 +760,6 @@
       if (/^(BUTTON|INPUT|LABEL|SUMMARY|SELECT|TEXTAREA)$/.test(control.tagName || "")) return true;
       control = control.parentNode;
     }
-    if (animating) return stopEvent(event);
     if (event.pointerId !== undefined && wrap.setPointerCapture) {
       try { wrap.setPointerCapture(event.pointerId); } catch (err) {}
     }
@@ -950,7 +909,6 @@
   }
 
   function clearInk() {
-    if (animating) return;
     resetView();
     strokes = [];
     historyActions = [];
@@ -1290,7 +1248,6 @@
   }
 
   function newEntry() {
-    if (animating) return;
     var previousThreadId = hermesThreadId;
     if (!sessionId || !previousThreadId) {
       finishNewEntry(newHermesThreadId(), true);
@@ -1307,11 +1264,9 @@
     }, 45000);
   }
 
-  // Body class carries BOTH orientation and mode, so set them together.
   function syncBodyClass() {
-    var cls = [];
+    var cls = ["split"];
     if (landscape) cls.push("landscape");
-    if (mode === "split") cls.push("split");
     if (darkMode) cls.push("dark");
     document.body.className = cls.join(" ");
   }
@@ -1337,22 +1292,6 @@
 
   function toggleLandscape() {
     applyLandscape(!landscape);
-  }
-
-  function applyMode(m) {
-    mode = m === "riddle" ? "riddle" : "split";
-    if (modeBtn) modeBtn.textContent = mode === "split" ? "Mode: Split" : "Mode: Riddle";
-    storageSet("diaryMode", mode);
-    syncBodyClass();
-    rectCache = null;
-    requestFrame(function () {
-      resizeCanvas();
-      renderLatest(); // re-show the latest reply in the newly active pane
-    });
-  }
-
-  function toggleMode() {
-    applyMode(mode === "split" ? "riddle" : "split");
   }
 
   function pageScroll(direction) {
@@ -1542,7 +1481,6 @@
   }
 
   function sendInner() {
-    if (animating) return;
     var payload = requestPayload();
     if (!payload.text && !payload.imageDataUrl) {
       setStatus("Write or type something first");
@@ -1562,10 +1500,7 @@
 
     var replyText = null;
     var failed = null;
-    var isRiddle = mode === "riddle";
-    // Riddle waits for the dissolve animation to finish before showing the
-    // reply; split has no animation, so it's ready to react immediately.
-    var ready = !isRiddle;
+    var ready = true;
 
     function restoreInk() {
       strokes = savedStrokes;
@@ -1594,7 +1529,7 @@
       stopThinking();
       // Split mode keeps the ink up during thinking, then clears it once the
       // reply lands so the top is fresh for the next note (and not re-sent).
-      if (mode === "split") clearCanvas();
+      clearCanvas();
       formReply(replyText);
       setBusy(false);
       setStatus("Reply from Hermes");
@@ -1607,16 +1542,8 @@
       else startThinking();
     }
 
-    if (isRiddle) {
-      // The dissolve runs while the request is in flight, masking latency.
-      dissolveAway(function () {
-        ready = true;
-        proceed();
-      });
-    } else {
-      // Split: keep the writing visible, show the pulse in the reply pane.
-      startThinking();
-    }
+    // Keep the writing visible while the reply pane shows progress.
+    startThinking();
 
     ajaxJson("POST", "/api/send", payload, function (error, json) {
       if (error || !json.ok) {
@@ -1640,9 +1567,8 @@
   // Live streaming: read the reply incrementally as Hermes writes it, using
   // XHR readyState 3 (LOADING) — the one streaming path old WebKit supports.
   function streamSend(payload, savedStrokes, savedInk) {
-    var isRiddle = mode === "riddle";
     var gen = ++revealGen;               // cancels any prior reveal/stream
-    var revealReady = !isRiddle;         // riddle waits for the dissolve
+    var revealReady = true;
     var metaParsed = false;
     var headerEnd = 0;
     var streamText = "";
@@ -1727,7 +1653,7 @@
       thread.push({ role: "assistant", text: streamText });
       typed.value = "";
       sessionLabel.innerHTML = "Entry: " + escapeHtml(sessionTitle || "Untitled");
-      if (mode === "split") clearCanvasNow();
+      clearCanvasNow();
       paint(true);
       setBusy(false);
       setStatus("Reply from Hermes");
@@ -1755,18 +1681,7 @@
       finishStream();
     };
 
-    if (isRiddle) {
-      dissolveAway(function () {
-        revealReady = true;
-        // The reply may already be complete (fast reply during the dissolve),
-        // still streaming, or not started yet — handle each.
-        if (finished) paint(true);
-        else if (streamText) paint(false);
-        else startThinking();
-      });
-    } else {
-      startThinking();
-    }
+    startThinking();
 
     try {
       xhr.send(JSON.stringify(payload));
@@ -1817,7 +1732,6 @@
   add(historyClose, "click", hideHistory);
   add(historyList, "click", historyClick);
   add(rotateBtn, "click", toggleLandscape);
-  add(modeBtn, "click", toggleMode);
   add(pgUp, "click", function () { pageScroll(-1); });
   add(pgDn, "click", function () { pageScroll(1); });
   add(pgUp2, "click", function () { pageScroll(-1); });
@@ -1857,11 +1771,10 @@
     setStatus(targetEl.value === "hermes" ? "Firm tools ready" : "Target changed");
   });
 
-  // Apply saved mode + orientation before first paint.
-  mode = storageGet("diaryMode") === "riddle" ? "riddle" : "split";
+  // Riddle mode was retired; clear any saved preference from older versions.
+  storageSet("diaryMode", null);
   landscape = storageGet("diaryLandscape") === "1";
   darkMode = storageGet("diaryDark") === "1";
-  if (modeBtn) modeBtn.textContent = mode === "split" ? "Mode: Split" : "Mode: Riddle";
   if (streamEl) {
     streamEl.checked = storageGet("diaryStream") !== "0";
     add(streamEl, "change", function () {

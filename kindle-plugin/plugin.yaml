@@ -1,0 +1,28 @@
+manifest_version: 1
+name: kindle-scribe
+label: Kindle Scribe
+kind: platform
+version: 1.0.0
+description: >
+  Kindle Scribe gateway adapter for Hermes Agent. Bridges the handwriting
+  notebook into the gateway as a platform so handwritten notes reach the full
+  agent, tools, and memory. The adapter exposes a localhost-only ingest server
+  used by the companion diary bridge.
+author: Jeffrey Watts
+requires_env:
+  - name: KINDLE_INGEST_TOKEN
+    description: "Shared secret used between the diary bridge and Kindle adapter"
+    secret: true
+optional_env:
+  - name: KINDLE_INSECURE
+    description: "Skip token auth for localhost development only (true/false)"
+  - name: KINDLE_ALLOWED_USERS
+    description: "Comma-separated user IDs allowed to use the channel"
+  - name: KINDLE_ALLOW_ALL_USERS
+    description: "Allow any user for localhost development only (true/false)"
+  - name: KINDLE_INGEST_HOST
+    description: "Ingest bind address (default 127.0.0.1)"
+  - name: KINDLE_INGEST_PORT
+    description: "Ingest port (default 8793)"
+  - name: KINDLE_REPLY_TIMEOUT
+    description: "Seconds to wait for a completed agent reply (default 240)"
