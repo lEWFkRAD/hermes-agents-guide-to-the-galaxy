@@ -62,6 +62,10 @@ bookmark it. Config is via env vars (all optional):
 | `DIARY_OCR_CLEANUP_MODEL` | `qwen3.6-27b-nvfp4` | OCR cleanup model name |
 | `KINDLE_ADAPTER_URL` | `http://127.0.0.1:8793/ingest` | Hermes Kindle platform ingest endpoint |
 | `KINDLE_USER` | `kindle` | Stable Hermes user identity for the device |
+| `DIARY_CHAT_TIMEOUT_MS` | `120000` | Timeout for ordinary model and OCR requests |
+| `DIARY_STREAM_TIMEOUT_MS` | `300000` | Timeout for streaming model responses |
+| `DIARY_ADAPTER_TIMEOUT_MS` | `300000` | Timeout for Kindle adapter requests |
+| `DIARY_WARM_TIMEOUT_MS` | `15000` | Timeout for background warm-up requests |
 | `DIARY_AUTH_TOKEN` | *(unset)* | If set, `/api/*` requires this secret. Open the diary once with `?k=<token>` — it's saved and sent on every call. Unset = open (LAN default). |
 | `DIARY_REMOTE_KEY` | *(unset)* | Permanent key required for API and handwriting access through a public `*.ts.net` Funnel hostname. Bookmark `/remote/<key>`; LAN access remains unchanged. |
 

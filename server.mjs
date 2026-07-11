@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WorkspaceStore } from "./lib/workspaces.mjs";
+import { fetchWithTimeout, OUTBOUND_TIMEOUTS } from "./lib/outbound.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
@@ -311,7 +312,7 @@ function chatHeaders(token, sessionKey) {
 }
 
 async function callChat({ endpoint, model, token, text, imageDataUrl, mode, history = [], sessionKey = "kindle-scribe-diary" }) {
-  const response = await fetch(endpoint, {
+  const response = await fetchWithTimeout(endpoint, {
     method: "POST",
     headers: chatHeaders(token, sessionKey),
     body: JSON.stringify({
@@ -320,7 +321,7 @@ async function callChat({ endpoint, model, token, text, imageDataUrl, mode, hist
       max_tokens: 900,
       messages: buildMessages({ text, imageDataUrl, history })
     })
-  });
+  }, OUTBOUND_TIMEOUTS.chat, "model request");
 
   const raw = await response.text();
   let json;
@@ -336,7 +337,7 @@ async function callChat({ endpoint, model, token, text, imageDataUrl, mode, hist
 }
 
 async function cleanHandwritingTranscription(rawText) {
-  const response = await fetch(ocrCleanupEndpoint, {
+  const response = await fetchWithTimeout(ocrCleanupEndpoint, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -357,7 +358,7 @@ async function cleanHandwritingTranscription(rawText) {
         { role: "user", content: rawText }
       ]
     })
-  });
+  }, OUTBOUND_TIMEOUTS.chat, "OCR cleanup");
   const raw = await response.text();
   let json;
   try { json = JSON.parse(raw); } catch { throw new Error("OCR cleanup returned invalid JSON"); }
@@ -368,7 +369,7 @@ async function cleanHandwritingTranscription(rawText) {
 // Streaming variant: parses the gateway's OpenAI SSE and fires onToken(delta)
 // as each fragment arrives. Returns the full accumulated text at the end.
 async function callChatStream({ endpoint, model, token, text, imageDataUrl, history = [], sessionKey = "kindle-scribe-diary", onToken }) {
-  const response = await fetch(endpoint, {
+  const response = await fetchWithTimeout(endpoint, {
     method: "POST",
     headers: chatHeaders(token, sessionKey),
     body: JSON.stringify({
@@ -378,7 +379,7 @@ async function callChatStream({ endpoint, model, token, text, imageDataUrl, hist
       stream: true,
       messages: buildMessages({ text, imageDataUrl, history })
     })
-  });
+  }, OUTBOUND_TIMEOUTS.stream, "streaming model request");
 
   if (!response.ok || !response.body) {
     const raw = await response.text().catch(() => "");
@@ -438,15 +439,16 @@ async function callKindleChannel({ text, chatId, rawText = false }) {
   ].join(" ");
   let response;
   try {
-    response = await fetch(kindleAdapterUrl, {
+    response = await fetchWithTimeout(kindleAdapterUrl, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         ...(kindleIngestToken ? { "x-kindle-token": kindleIngestToken } : {})
       },
       body: JSON.stringify({ text: rawText ? text : `${channelInstruction}\n\n${text}`, user: kindleUser, chat_id: chatId })
-    });
-  } catch {
+    }, OUTBOUND_TIMEOUTS.adapter, "Kindle adapter");
+  } catch (error) {
+    if (error?.message?.includes("timed out")) throw error;
     throw new Error(
       "Firm agent channel isn't running. Start the Hermes gateway with the kindle " +
       "platform, then try the firm agent again."
@@ -1005,7 +1007,7 @@ const server = http.createServer(async (req, res) => {
     // Respond immediately; the warm-up runs fire-and-forget.
     (async () => {
       try {
-        await fetch(hermesEndpoint, {
+        await fetchWithTimeout(hermesEndpoint, {
           method: "POST",
           headers: chatHeaders(hermesToken, "kindle-scribe-diary-warm"),
           body: JSON.stringify({
@@ -1013,7 +1015,7 @@ const server = http.createServer(async (req, res) => {
             max_tokens: 1,
             messages: [{ role: "user", content: "hi" }]
           })
-        });
+        }, OUTBOUND_TIMEOUTS.warm, "warm-up request");
         logSend({ kind: "warm", ok: true });
       } catch (error) {
         logSend({ kind: "warm", ok: false, error: error.message });
