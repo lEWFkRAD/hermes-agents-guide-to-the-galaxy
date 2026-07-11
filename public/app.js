@@ -7,7 +7,7 @@
   (function () {
     var m = (window.location.search || "").match(/[?&]k=([^&#]+)/);
     var rm = (window.location.search || "").match(/[?&]rk=([^&#]+)/);
-    var rpm = (window.location.pathname || "").match(/^\/remote\/([^/]+)\/?$/);
+    var rpm = (window.location.pathname || "").match(/^\/remote\/([^/]+)(?:\/live)?\/?$/);
     if (rm) remoteKey = decodeURIComponent(rm[1]);
     else if (rpm) remoteKey = decodeURIComponent(rpm[1]);
     try {
@@ -1749,7 +1749,7 @@
         if (!data.page || !data.page.revision || data.page.revision === notebookLiveRevision) return;
         if (notebookLiveRevision && strokes.length) clearInk();
         notebookLiveRevision = data.page.revision;
-        notebookLiveFrame.src = "/api/live-page/content?theme=" + (darkMode ? "dark" : "light") + "&v=" + encodeURIComponent(notebookLiveRevision);
+        notebookLiveFrame.src = appendRemoteKey("/api/live-page/content?theme=" + (darkMode ? "dark" : "light") + "&v=" + encodeURIComponent(notebookLiveRevision));
         hint.style.display = "none";
       } catch (error) {}
     };
