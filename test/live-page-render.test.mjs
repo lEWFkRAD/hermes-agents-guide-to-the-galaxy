@@ -28,7 +28,6 @@ test("live shell cache-busts the current renderer and Journey assets", async () 
   const html = await fs.readFile(path.join(repoRoot, "public", "live.html"), "utf8");
   assert.match(html, /live\.css\?v=13/);
   assert.match(html, /live\.js\?v=25/);
-  assert.doesNotMatch(source, /removeStorage\(/);
   assert.match(html, /class="labeledTool"/);
   assert.match(html, /id="hermesToggleBtn"/);
   assert.match(html, /id="moreToggleBtn"/);
@@ -72,6 +71,7 @@ test("annotation tools default to a compact Kindle-friendly reading mode", async
   assert.match(source, /setToolsOpen\(false\);/);
   assert.match(source, /pointInPolygon/);
   assert.match(source, /requestClear/);
+  assert.doesNotMatch(source, /removeStorage\(/);
   assert.match(source, /requestFrame\(renderMovePreview\)/);
   assert.match(source, /streamPaintTimer/);
   assert.match(source, /slow \/new must never hold/);
