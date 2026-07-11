@@ -258,5 +258,12 @@ test("claims a synced annotation once and replays its completed result", async (
     });
     assert.equal(persistedReplay.status, "complete");
     assert.deepEqual(persistedReplay.result, response);
+
+    const explicitResend = await reopened.claimSend({
+      sendId: "send-explicit-resend",
+      strokeIds: ["stroke-claim"],
+      resend: true
+    });
+    assert.equal(explicitResend.status, "claimed");
   });
 });

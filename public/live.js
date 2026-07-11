@@ -333,7 +333,7 @@
     undoInkBtn.disabled = sendBusy || !!pendingInkSend || localUndoIndex() < 0;
     clearInkBtn.disabled = sendBusy || (!strokes.length && !pendingInkSend);
     drawModeBtn.disabled = sendBusy || !!pendingInkSend;
-    var cannotSend = sendBusy || !inkSyncReady || hasPendingAddOperations() || (!pendingInkSend && !unsentStrokes().length);
+    var cannotSend = sendBusy || !inkSyncReady || hasPendingAddOperations() || (!pendingInkSend && !strokes.length);
     if (sendInkBtn) sendInkBtn.disabled = cannotSend;
     if (liveSendBtn) liveSendBtn.disabled = cannotSend;
     if (copyInkBtn) copyInkBtn.disabled = sendBusy || !strokes.length;
@@ -1365,6 +1365,7 @@
       }
     } else {
       pending = unsentStrokes();
+      if (!pending.length) pending = strokes.slice(0);
       for (var pendingIndex = 0; pendingIndex < pending.length; pendingIndex += 1) pendingIds.push(pending[pendingIndex].id);
       liveInkSendId = nextInkId("send");
     }
@@ -1445,6 +1446,7 @@
       livePageRevision: revision,
       liveInkSendId: liveInkSendId,
       liveInkStrokeIds: pendingIds,
+      resend: !retrying && unsentStrokes().length === 0,
       stream: useStream
     }));
   }

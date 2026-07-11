@@ -1182,7 +1182,7 @@ async function handleSend(req, res) {
     if (isLivePageSource && target === "hermes" && liveInkSendId && liveInkStrokeIds.length) {
       try {
         const claimed = await withLiveState(async () => {
-          const claim = await liveInkStore.claimSend({ sendId: liveInkSendId, strokeIds: liveInkStrokeIds });
+          const claim = await liveInkStore.claimSend({ sendId: liveInkSendId, strokeIds: liveInkStrokeIds, resend: body.resend === true });
           return {
             claim,
             anchors: claim.status === "claimed" ? collectLiveDomAnchors(liveInkStore.snapshot(), liveInkStrokeIds) : [],
