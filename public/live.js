@@ -987,7 +987,7 @@
   }
 
   function endInk(event) {
-    if(movingSelection){movingSelection=false;var oldIds=[],newIds=[];for(var mm=0;mm<moveOriginals.length;mm+=1){oldIds.push(moveOriginals[mm].stroke.id);var moved=strokes[moveOriginals[mm].index];moved.id=nextInkId("stroke");moved.sent=false;newIds.push(moved.id);queueInkOperation("add",{stroke:moved});}queueInkOperation("delete",{ids:oldIds});selectedStrokeIds=newIds;moveMode=false;if(moveSelectionBtn)moveSelectionBtn.className="selectionAction";saveInk();redrawInk();updateInkButtons();setText(stateEl,"Selection moved");return stopEvent(event);}
+    if(movingSelection){movingSelection=false;var oldIds=[],newIds=[];for(var mm=0;mm<moveOriginals.length;mm+=1){oldIds.push(moveOriginals[mm].stroke.id);var moved=strokes[moveOriginals[mm].index];moved.id=nextInkId("stroke");moved.sent=false;newIds.push(moved.id);queueInkOperation("add",{stroke:moved});}queueInkOperation("delete",{ids:oldIds});selectedStrokeIds=newIds;moveMode=false;if(moveSelectionBtn)moveSelectionBtn.className="selectionAction";setText(annotationToggleBtn,"Pen");saveInk();redrawInk();updateInkButtons();setText(stateEl,"Selection moved");return stopEvent(event);}
     if (lassoing) {
       lassoing = false;
       if (lassoPoints.length > 2) {
@@ -1069,6 +1069,7 @@
 
   function setDrawMode(enabled) {
     drawMode = !!enabled;
+    if(drawMode&&!eraserMode&&!lassoMode&&!moveMode)setText(annotationToggleBtn,"Pen");
     updateBodyMode();
     setText(drawModeBtn, drawMode ? "Done" : "Draw");
     drawModeBtn.className = drawMode ? "active" : "";
@@ -1120,9 +1121,10 @@
 
   function toggleEraser() {
     eraserMode = !eraserMode;
-    if (eraserInkBtn) eraserInkBtn.className = eraserMode ? "active" : "";
+    if (eraserInkBtn) eraserInkBtn.className = eraserMode ? "labeledTool active" : "labeledTool";
     if (eraserMode && !drawMode) setDrawMode(true);
     setText(stateEl, eraserMode ? "Eraser" : "Pen");
+    setText(annotationToggleBtn,eraserMode?"Eraser":"Pen");
   }
 
   function copyInk() {
@@ -1132,7 +1134,7 @@
     updateInkButtons();
   }
 
-  function toggleLasso() { lassoMode=!lassoMode; eraserMode=false; if(eraserInkBtn) eraserInkBtn.className=""; if(lassoInkBtn) lassoInkBtn.className=lassoMode?"active":""; setText(stateEl,lassoMode?"Lasso":"Pen"); }
+  function toggleLasso() { lassoMode=!lassoMode; eraserMode=false; if(eraserInkBtn) eraserInkBtn.className="labeledTool"; if(lassoInkBtn) lassoInkBtn.className=lassoMode?"labeledTool active":"labeledTool"; setText(stateEl,lassoMode?"Select":"Pen"); setText(annotationToggleBtn,lassoMode?"Select":"Pen"); }
   function rotateSelection() {
     var chosen=[]; for(var i=0;i<strokes.length;i+=1) if(selectedStrokeIds.indexOf(strokes[i].id)>=0) chosen.push(strokes[i]); if(!chosen.length)return;
     var cx=0,cy=0,n=0; for(var s=0;s<chosen.length;s+=1)for(var p=0;p<chosen[s].points.length;p+=1){cx+=chosen[s].points[p].x;cy+=chosen[s].points[p].y;n+=1;} cx/=n;cy/=n;
@@ -1140,7 +1142,7 @@
     queueInkOperation("delete",{ids:oldIds}); selectedStrokeIds=[]; redrawInk();saveInk();updateInkButtons();
   }
   function deleteSelection(){if(!selectedStrokeIds.length)return;var ids=selectedStrokeIds.slice(0),kept=[];for(var i=0;i<strokes.length;i+=1)if(ids.indexOf(strokes[i].id)<0)kept.push(strokes[i]);strokes=kept;selectedStrokeIds=[];queueInkOperation("delete",{ids:ids});redrawInk();saveInk();updateInkButtons();setText(stateEl,"Selection deleted");}
-  function toggleMoveSelection(){moveMode=!moveMode;lassoMode=false;if(lassoInkBtn)lassoInkBtn.className="";if(moveSelectionBtn)moveSelectionBtn.className=moveMode?"selectionAction active":"selectionAction";setText(stateEl,moveMode?"Drag selection to move":"Selection ready");}
+  function toggleMoveSelection(){moveMode=!moveMode;lassoMode=false;if(lassoInkBtn)lassoInkBtn.className="labeledTool";if(moveSelectionBtn)moveSelectionBtn.className=moveMode?"selectionAction active":"selectionAction";setText(stateEl,moveMode?"Drag selection to move":"Selection ready");setText(annotationToggleBtn,moveMode?"Move":"Pen");}
 
   function pasteInk() {
     for (var i = 0; i < inkClipboard.length; i += 1) {

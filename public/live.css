@@ -188,6 +188,10 @@ button:disabled { opacity: .42; }
 .annotationTools { max-width:240px; }
 .intentActions { display:none; }
 @media (max-width: 540px) { .liveIdentity span{display:none}.liveActions{gap:3px}.liveActions>button{padding:4px 7px}.menuPill{min-width:48px}.liveIdentity{flex-basis:72px} }
+.annotationTools { max-width: 250px; }
+.toolActions .labeledTool { width: 108px; display:flex; align-items:center; justify-content:flex-start; gap:7px; padding:0 8px; }
+.toolActions .labeledTool svg { width:20px; height:20px; margin:0; flex:0 0 auto; }
+.toolActions .labeledTool::after { content:attr(title); font:700 12px/1 Arial,sans-serif; }
 .livingSurface {
   position: relative;
   flex: 1 1 auto;
