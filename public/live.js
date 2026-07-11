@@ -116,6 +116,8 @@
   var selectedStrokeIds = [];
   var clearArmed = false, clearTimer = null;
   var moveMode=false,movingSelection=false,moveStart=null,moveOriginals=[];
+  var movePreviewFrame=null,movePreviewPoint=null;
+  var streamPaintTimer=null,lastStreamPaint="";
   var INK_STORAGE_KEY = "livePageInkV1";
   var INK_CLIENT_KEY = "livePageInkClientV2";
   var INK_MIGRATION_KEY = "livePageInkMigratedV2";
@@ -514,7 +516,7 @@
 
   function scheduleInkPoll(delay) {
     if (inkPollTimer) window.clearTimeout(inkPollTimer);
-    inkPollTimer = window.setTimeout(function () { refreshInkFromServer(false); }, delay || 5000);
+    inkPollTimer = window.setTimeout(function () { refreshInkFromServer(false); }, (typeof document.hidden !== "undefined" && document.hidden) ? 30000 : (delay || 5000));
   }
 
   function refreshInkFromServer(force) {
@@ -943,7 +945,7 @@
   }
 
   function moveInk(event) {
-    if(movingSelection){var mp=pointFromEvent(event),dx=mp.x-moveStart.x,dy=mp.y-moveStart.y;for(var mo=0;mo<moveOriginals.length;mo+=1){var shifted=JSON.parse(JSON.stringify(moveOriginals[mo].stroke));for(var mpt=0;mpt<shifted.points.length;mpt+=1){shifted.points[mpt].x=Math.max(0,Math.min(1,shifted.points[mpt].x+dx));shifted.points[mpt].y=Math.max(0,Math.min(1,shifted.points[mpt].y+dy));}strokes[moveOriginals[mo].index]=shifted;}redrawInk();return stopEvent(event);}
+    if(movingSelection){movePreviewPoint=pointFromEvent(event);if(!movePreviewFrame)movePreviewFrame=requestFrame(renderMovePreview);return stopEvent(event);}
     if (lassoing) { lassoPoints.push(pointFromEvent(event)); return stopEvent(event); }
     if (!drawing || !currentStroke) return stopEvent(event);
     var samples = [event];
@@ -987,7 +989,7 @@
   }
 
   function endInk(event) {
-    if(movingSelection){movingSelection=false;var oldIds=[],newIds=[];for(var mm=0;mm<moveOriginals.length;mm+=1){oldIds.push(moveOriginals[mm].stroke.id);var moved=strokes[moveOriginals[mm].index];moved.id=nextInkId("stroke");moved.sent=false;newIds.push(moved.id);queueInkOperation("add",{stroke:moved});}queueInkOperation("delete",{ids:oldIds});selectedStrokeIds=newIds;moveMode=false;if(moveSelectionBtn)moveSelectionBtn.className="selectionAction";setText(annotationToggleBtn,"Pen");saveInk();redrawInk();updateInkButtons();setText(stateEl,"Selection moved");return stopEvent(event);}
+    if(movingSelection){movePreviewPoint=pointFromEvent(event);renderMovePreview();movingSelection=false;var oldIds=[],newIds=[];for(var mm=0;mm<moveOriginals.length;mm+=1){oldIds.push(moveOriginals[mm].stroke.id);var moved=strokes[moveOriginals[mm].index];moved.id=nextInkId("stroke");moved.sent=false;newIds.push(moved.id);queueInkOperation("add",{stroke:moved});}queueInkOperation("delete",{ids:oldIds});selectedStrokeIds=newIds;moveMode=false;if(moveSelectionBtn)moveSelectionBtn.className="selectionAction";setText(annotationToggleBtn,"Pen");saveInk();redrawInk();updateInkButtons();setText(stateEl,"Selection moved");return stopEvent(event);}
     if (lassoing) {
       lassoing = false;
       if (lassoPoints.length > 2) {
@@ -1114,6 +1116,7 @@
     setText(replyTextEl, text || "Hermes finished.");
     replyEl.hidden = false;
   }
+  function renderMovePreview(){movePreviewFrame=null;if(!movingSelection||!movePreviewPoint)return;var dx=movePreviewPoint.x-moveStart.x,dy=movePreviewPoint.y-moveStart.y;for(var mo=0;mo<moveOriginals.length;mo+=1){var original=moveOriginals[mo].stroke,current=strokes[moveOriginals[mo].index];for(var mpt=0;mpt<original.points.length;mpt+=1){current.points[mpt].x=Math.max(0,Math.min(1,original.points[mpt].x+dx));current.points[mpt].y=Math.max(0,Math.min(1,original.points[mpt].y+dy));}}redrawInk();}
   function requestClear(){if(!clearArmed){clearArmed=true;setText(clearInkBtn,"Tap again to clear");setText(stateEl,"Clear all ink?");if(clearTimer)window.clearTimeout(clearTimer);clearTimer=window.setTimeout(function(){clearArmed=false;setText(clearInkBtn,"Clear ink");},4000);return;}clearArmed=false;if(clearTimer)window.clearTimeout(clearTimer);setText(clearInkBtn,"Clear ink");clearInk();}
   function pointInPolygon(point, polygon){var inside=false;for(var i=0,j=polygon.length-1;i<polygon.length;j=i++){var a=polygon[i],b=polygon[j];if(((a.y>point.y)!==(b.y>point.y))&&(point.x<(b.x-a.x)*(point.y-a.y)/(b.y-a.y||.000001)+a.x))inside=!inside;}return inside;}
   function closeMenus(except) { var menus=[["pen",annotationToolsEl,annotationToggleBtn],["hermes",hermesToolsEl,hermesToggleBtn],["more",moreToolsEl,moreToggleBtn]]; for(var i=0;i<menus.length;i+=1){if(menus[i][0]!==except){menus[i][1].hidden=true;menus[i][2].setAttribute("aria-expanded","false");}} }
@@ -1277,7 +1280,7 @@
   }
   function schedulePoll() {
     if (pollTimer) window.clearTimeout(pollTimer);
-    pollTimer = window.setTimeout(function () { loadMetadata(false); }, 10000);
+    pollTimer = window.setTimeout(function () { loadMetadata(false); }, (typeof document.hidden !== "undefined" && document.hidden) ? 30000 : 10000);
   }
 
   function loadMetadata(force) {
@@ -1385,7 +1388,7 @@
       if (useStream && xhr.readyState >= 3 && xhr.responseText) {
         var raw = xhr.responseText;
         if (!streamHeader) { var nl = raw.indexOf("\n"); if (nl >= 0) { try { rememberChannel(JSON.parse(raw.slice(0,nl))); } catch(error){} streamHeader=true; streamStart=nl+1; } }
-        if (streamHeader) { var part=raw.slice(streamStart), rs=part.indexOf(String.fromCharCode(30)); if(rs>=0){streamText=part.slice(0,rs);try{streamTrailer=JSON.parse(part.slice(rs+1));}catch(error){}}else streamText=part; if(streamText) showReply(streamText); }
+        if (streamHeader) { var part=raw.slice(streamStart), rs=part.indexOf(String.fromCharCode(30)); if(rs>=0){streamText=part.slice(0,rs);try{streamTrailer=JSON.parse(part.slice(rs+1));}catch(error){}}else streamText=part; if(streamText&&streamText!==lastStreamPaint&&!streamPaintTimer)streamPaintTimer=window.setTimeout(function(){streamPaintTimer=null;lastStreamPaint=streamText;showReply(streamText);},160); }
       }
       if (xhr.readyState !== 4 || done) return;
       if (xhr.status < 200 || xhr.status >= 300) {

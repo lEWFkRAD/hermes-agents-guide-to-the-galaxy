@@ -1322,10 +1322,10 @@ async function handleSend(req, res) {
         // The platform adapter returns a completed turn. Reveal it in bounded
         // chunks so old Kindle WebKit receives the entire response through its
         // incremental XHR path instead of one easily-truncated repaint.
-        const chunks = result.text.match(/[\s\S]{1,160}/g) || [];
+        const chunks = result.text.match(/[\s\S]{1,320}/g) || [];
         for (const chunk of chunks) {
           res.write(chunk);
-          await new Promise(resolve => setTimeout(resolve, 18));
+          await new Promise(resolve => setTimeout(resolve, 70));
         }
         res.write(RS + JSON.stringify({ title: session.title, pageChanged, page: pageChanged ? afterLivePage : undefined }));
         res.end();
