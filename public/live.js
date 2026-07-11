@@ -80,10 +80,16 @@
   var pasteInkBtn = document.getElementById("pasteInkBtn");
   var lassoInkBtn = document.getElementById("lassoInkBtn");
   var rotateInkBtn = document.getElementById("rotateInkBtn");
+  var deleteSelectionBtn = document.getElementById("deleteSelectionBtn");
   var backBtn = document.getElementById("backBtn");
   var liveHistoryBtn = document.getElementById("liveHistoryBtn");
   var liveNewBtn = document.getElementById("liveNewBtn");
   var liveThemeBtn = document.getElementById("liveThemeBtn");
+  var hermesToggleBtn = document.getElementById("hermesToggleBtn");
+  var moreToggleBtn = document.getElementById("moreToggleBtn");
+  var hermesToolsEl = document.getElementById("hermesTools");
+  var moreToolsEl = document.getElementById("moreTools");
+  var emptyHintEl = document.getElementById("emptyHint");
   var liveSendBtn = document.getElementById("liveSendBtn");
   var liveHistoryEl = document.getElementById("liveHistory");
   var liveHistoryCloseBtn = document.getElementById("liveHistoryCloseBtn");
@@ -106,6 +112,7 @@
   var lassoing = false;
   var lassoPoints = [];
   var selectedStrokeIds = [];
+  var clearArmed = false, clearTimer = null;
   var INK_STORAGE_KEY = "livePageInkV1";
   var INK_CLIENT_KEY = "livePageInkClientV2";
   var INK_MIGRATION_KEY = "livePageInkMigratedV2";
@@ -319,11 +326,14 @@
     undoInkBtn.disabled = sendBusy || !!pendingInkSend || localUndoIndex() < 0;
     clearInkBtn.disabled = sendBusy || (!strokes.length && !pendingInkSend);
     drawModeBtn.disabled = sendBusy || !!pendingInkSend;
-    sendInkBtn.disabled = sendBusy || !inkSyncReady || hasPendingAddOperations() || (!pendingInkSend && !unsentStrokes().length);
-    if (liveSendBtn) liveSendBtn.disabled = sendInkBtn.disabled;
+    var cannotSend = sendBusy || !inkSyncReady || hasPendingAddOperations() || (!pendingInkSend && !unsentStrokes().length);
+    if (sendInkBtn) sendInkBtn.disabled = cannotSend;
+    if (liveSendBtn) liveSendBtn.disabled = cannotSend;
     if (copyInkBtn) copyInkBtn.disabled = sendBusy || !strokes.length;
     if (pasteInkBtn) pasteInkBtn.disabled = sendBusy || !inkClipboard.length;
     if (rotateInkBtn) rotateInkBtn.disabled = sendBusy || !selectedStrokeIds.length;
+    var selectionActions=document.getElementsByClassName?document.getElementsByClassName("selectionAction"):[]; for(var sa=0;sa<selectionActions.length;sa+=1)selectionActions[sa].hidden=!selectedStrokeIds.length;
+    if(deleteSelectionBtn)deleteSelectionBtn.disabled=sendBusy||!selectedStrokeIds.length;
   }
 
   function saveInk() {
@@ -685,7 +695,8 @@
     while (displayEl.firstChild) displayEl.removeChild(displayEl.firstChild);
     displayEl.setAttribute("viewBox", "0 0 " + canvasEl.width + " " + canvasEl.height);
     displayEl.setAttribute("preserveAspectRatio", "none");
-    for (var i = 0; i < strokes.length; i += 1) drawStroke(strokes[i]);
+    for (var i = 0; i < strokes.length; i += 1) { var el=drawStroke(strokes[i]); if(selectedStrokeIds.indexOf(strokes[i].id)>=0) el.setAttribute("class","selectedInk"); }
+    if (emptyHintEl) emptyHintEl.hidden = strokes.length > 0;
     if (drawing && currentStroke) currentDisplayEl = displayEl.lastChild;
   }
   function exportInk(selected) {
@@ -972,12 +983,10 @@
     if (lassoing) {
       lassoing = false;
       if (lassoPoints.length > 2) {
-        var lx0=1, ly0=1, lx1=0, ly1=0;
-        for (var lp=0; lp<lassoPoints.length; lp+=1) { lx0=Math.min(lx0,lassoPoints[lp].x); ly0=Math.min(ly0,lassoPoints[lp].y); lx1=Math.max(lx1,lassoPoints[lp].x); ly1=Math.max(ly1,lassoPoints[lp].y); }
         selectedStrokeIds=[];
-        for (var ls=0; ls<strokes.length; ls+=1) { var pts=strokes[ls].points||[], sx=0, sy=0; for(var sp=0;sp<pts.length;sp+=1){sx+=pts[sp].x;sy+=pts[sp].y;} if(pts.length && sx/pts.length>=lx0 && sx/pts.length<=lx1 && sy/pts.length>=ly0 && sy/pts.length<=ly1) selectedStrokeIds.push(strokes[ls].id); }
+        for (var ls=0; ls<strokes.length; ls+=1) { var pts=strokes[ls].points||[], inside=false; for(var sp=0;sp<pts.length;sp+=1){if(pointInPolygon(pts[sp],lassoPoints)){inside=true;break;}} if(inside)selectedStrokeIds.push(strokes[ls].id); }
       }
-      setText(stateEl, selectedStrokeIds.length ? selectedStrokeIds.length + " selected" : "Nothing selected"); updateInkButtons(); return stopEvent(event);
+      redrawInk(); setText(stateEl, selectedStrokeIds.length ? selectedStrokeIds.length + " selected" : "Nothing selected"); updateInkButtons(); return stopEvent(event);
     }
     if (!drawing) return stopEvent(event);
     var eventType = String(event && event.type || "").toLowerCase();
@@ -1096,6 +1105,10 @@
     setText(replyTextEl, text || "Hermes finished.");
     replyEl.hidden = false;
   }
+  function requestClear(){if(!clearArmed){clearArmed=true;setText(clearInkBtn,"Tap again to clear");setText(stateEl,"Clear all ink?");if(clearTimer)window.clearTimeout(clearTimer);clearTimer=window.setTimeout(function(){clearArmed=false;setText(clearInkBtn,"Clear ink");},4000);return;}clearArmed=false;if(clearTimer)window.clearTimeout(clearTimer);setText(clearInkBtn,"Clear ink");clearInk();}
+  function pointInPolygon(point, polygon){var inside=false;for(var i=0,j=polygon.length-1;i<polygon.length;j=i++){var a=polygon[i],b=polygon[j];if(((a.y>point.y)!==(b.y>point.y))&&(point.x<(b.x-a.x)*(point.y-a.y)/(b.y-a.y||.000001)+a.x))inside=!inside;}return inside;}
+  function closeMenus(except) { var menus=[["pen",annotationToolsEl,annotationToggleBtn],["hermes",hermesToolsEl,hermesToggleBtn],["more",moreToolsEl,moreToggleBtn]]; for(var i=0;i<menus.length;i+=1){if(menus[i][0]!==except){menus[i][1].hidden=true;menus[i][2].setAttribute("aria-expanded","false");}} }
+  function toggleMenu(name, menu, button) { var opening=menu.hidden; closeMenus(name); menu.hidden=!opening; button.setAttribute("aria-expanded",opening?"true":"false"); if(name==="pen")toolsOpen=opening; }
 
   function toggleEraser() {
     eraserMode = !eraserMode;
@@ -1118,6 +1131,7 @@
     var oldIds=[]; for(var j=0;j<chosen.length;j+=1){oldIds.push(chosen[j].id); var replacement=JSON.parse(JSON.stringify(chosen[j])); replacement.id=nextInkId("stroke"); replacement.sent=false; for(var q=0;q<replacement.points.length;q+=1){var dx=replacement.points[q].x-cx,dy=replacement.points[q].y-cy;replacement.points[q].x=cx-dy;replacement.points[q].y=cy+dx;} strokes[strokes.indexOf(chosen[j])]=replacement; queueInkOperation("add",{stroke:replacement});}
     queueInkOperation("delete",{ids:oldIds}); selectedStrokeIds=[]; redrawInk();saveInk();updateInkButtons();
   }
+  function deleteSelection(){if(!selectedStrokeIds.length)return;var ids=selectedStrokeIds.slice(0),kept=[];for(var i=0;i<strokes.length;i+=1)if(ids.indexOf(strokes[i].id)<0)kept.push(strokes[i]);strokes=kept;selectedStrokeIds=[];queueInkOperation("delete",{ids:ids});redrawInk();saveInk();updateInkButtons();setText(stateEl,"Selection deleted");}
 
   function pasteInk() {
     for (var i = 0; i < inkClipboard.length; i += 1) {
@@ -1410,7 +1424,9 @@
   bindInkEvents(canvasEl);
   add(window, "resize", resizeCanvas);
   add(frameEl, "load", hideMessage);
-  add(annotationToggleBtn, "click", function () { setToolsOpen(!toolsOpen); });
+  add(annotationToggleBtn, "click", function () { closeMenus("pen"); setToolsOpen(!toolsOpen); });
+  add(hermesToggleBtn, "click", function () { toggleMenu("hermes", hermesToolsEl, hermesToggleBtn); });
+  add(moreToggleBtn, "click", function () { toggleMenu("more", moreToolsEl, moreToggleBtn); });
   add(drawModeBtn, "click", function () { setDrawMode(!drawMode); });
   add(sendInkBtn, "click", function () { sendInkToHermes(""); });
   add(liveSendBtn, "click", function () { sendInkToHermes(""); });
@@ -1438,12 +1454,13 @@
   }
   add(closeReplyBtn, "click", hideReply);
   add(undoInkBtn, "click", undoInk);
-  add(clearInkBtn, "click", clearInk);
+  add(clearInkBtn, "click", requestClear);
   add(eraserInkBtn, "click", toggleEraser);
   add(copyInkBtn, "click", copyInk);
   add(pasteInkBtn, "click", pasteInk);
   add(lassoInkBtn, "click", toggleLasso);
   add(rotateInkBtn, "click", rotateSelection);
+  add(deleteSelectionBtn, "click", deleteSelection);
   add(window, "focus", function () { refreshInkFromServer(true); });
   add(window, "storage", function (event) {
     var key = event && event.key ? String(event.key) : "";

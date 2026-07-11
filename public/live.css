@@ -175,6 +175,19 @@ button:focus {
 }
 
 button:disabled { opacity: .42; }
+.pillMenu { position:absolute; top:60px; right:8px; display:flex; flex-direction:column; gap:5px; min-width:170px; padding:7px; border:2px solid var(--ink); background:var(--soft); }
+.pillMenu button { min-height:44px; text-align:left; }
+.selectedInk { stroke-width: 7 !important; stroke-dasharray: 8 5; opacity:.8; }
+.emptyHint { position:absolute; left:12%; right:12%; top:44%; z-index:3; color:var(--muted); text-align:center; font:18px/1.4 Arial,sans-serif; pointer-events:none; }
+.liveBar { min-width:0; }
+.liveIdentity { flex:0 1 150px; min-width:82px; overflow:hidden; }
+.liveIdentity strong,.liveIdentity span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.liveActions { flex:0 0 auto; }
+.menuPill { min-width:58px; }
+.annotationDock { position:absolute; top:60px; right:8px; }
+.annotationTools { max-width:240px; }
+.intentActions { display:none; }
+@media (max-width: 540px) { .liveIdentity span{display:none}.liveActions{gap:3px}.liveActions>button{padding:4px 7px}.menuPill{min-width:48px}.liveIdentity{flex-basis:72px} }
 .livingSurface {
   position: relative;
   flex: 1 1 auto;

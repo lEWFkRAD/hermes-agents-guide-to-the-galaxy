@@ -26,8 +26,11 @@ test("live ink uses the same smooth curve for display and Hermes export", async 
 
 test("live shell cache-busts the current renderer and Journey assets", async () => {
   const html = await fs.readFile(path.join(repoRoot, "public", "live.html"), "utf8");
-  assert.match(html, /live\.css\?v=11/);
-  assert.match(html, /live\.js\?v=19/);
+  assert.match(html, /live\.css\?v=12/);
+  assert.match(html, /live\.js\?v=20/);
+  assert.match(html, /id="hermesToggleBtn"/);
+  assert.match(html, /id="moreToggleBtn"/);
+  assert.doesNotMatch(html, /data-intent=/);
   assert.match(html, /live-journey\.css\?v=2/);
   assert.match(html, /live-journey\.js\?v=3/);
 });
@@ -53,17 +56,17 @@ test("annotation tools default to a compact Kindle-friendly reading mode", async
   assert.match(html, /id="annotationToggleBtn"/);
   assert.match(html, /id="annotationTools"[^>]*hidden/);
   assert.match(html, /class="toolActions"/);
-  assert.match(html, /aria-label="Send annotation"/);
-  assert.match(html, /data-intent="summarize"/);
-  assert.match(html, /data-intent="tasks"/);
-  assert.match(html, /data-intent="email"/);
-  assert.match(html, /data-intent="workpaper"/);
+  assert.match(html, /id="liveSendBtn"/);
+  assert.match(html, /id="hermesTools"[^>]*hidden/);
+  assert.match(html, /id="moreTools"[^>]*hidden/);
+  assert.match(html, /class="selectionAction"/);
+  assert.doesNotMatch(html, /data-intent=/);
   assert.match(css, /\.liveBar\s*\{[^}]*position:\s*absolute/s);
   assert.match(css, /\.toolActions button\s*\{[^}]*width:\s*44px/s);
   assert.match(css, /\.toolActions svg\s*\{[^}]*stroke:\s*currentColor/s);
   assert.match(source, /setToolsOpen\(false\);/);
-  assert.match(source, /startProgress\(requestedIntent\)/);
-  assert.match(source, /intentText\(requestedIntent\)/);
+  assert.match(source, /pointInPolygon/);
+  assert.match(source, /requestClear/);
 });
 
 test("main Kindle notebook defaults to the tool-enabled Hermes channel", async () => {
