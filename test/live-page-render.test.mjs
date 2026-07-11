@@ -31,7 +31,7 @@ test("live shell cache-busts the current renderer and Journey assets", async () 
   assert.match(html, /class="labeledTool"/);
   assert.match(html, /id="hermesToggleBtn"/);
   assert.match(html, /id="moreToggleBtn"/);
-  assert.doesNotMatch(html, /data-intent=/);
+  assert.match(html, /data-intent="redline"[^>]*aria-label="Suggest a redline/);
   assert.match(html, /live-journey\.css\?v=3/);
   assert.match(html, /live-journey\.js\?v=4/);
 });
@@ -64,7 +64,9 @@ test("annotation tools default to a compact Kindle-friendly reading mode", async
   assert.match(html, /id="moveSelectionBtn"/);
   assert.match(html, /id="askSelectionBtn"/);
   assert.match(css, /\.labeledTool::after/);
-  assert.doesNotMatch(html, /data-intent=/);
+  assert.match(html, /data-intent="redline"/);
+  assert.match(css, /\.liveReply\.redlineReply/);
+  assert.match(source, /showReply\(result\.text, requestedIntent\)/);
   assert.match(css, /\.liveBar\s*\{[^}]*position:\s*absolute/s);
   assert.match(css, /\.toolActions button\s*\{[^}]*width:\s*44px/s);
   assert.match(css, /\.toolActions svg\s*\{[^}]*stroke:\s*currentColor/s);
@@ -169,7 +171,7 @@ test("blank-page hint stays dismissed after writing or a Hermes response", async
   const source = await fs.readFile(path.join(repoRoot, "public", "live.js"), "utf8");
   assert.match(source, /var emptyHintDismissed = !!sessionId/);
   assert.match(source, /emptyHintEl\.hidden = emptyHintDismissed \|\| strokes\.length > 0/);
-  assert.match(source, /function showReply\(text\) \{[\s\S]*emptyHintDismissed = true/);
+  assert.match(source, /function showReply\(text, intent\) \{[\s\S]*emptyHintDismissed = true/);
   assert.match(source, /if \(page\.title !== "Blank page"\) emptyHintDismissed = true/);
 });
 

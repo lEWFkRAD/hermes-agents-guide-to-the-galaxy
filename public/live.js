@@ -101,6 +101,7 @@
   if (!surfaceEl || !frameEl || !canvasEl || !displayEl) return;
   var replyEl = document.getElementById("liveReply");
   var replyTextEl = document.getElementById("liveReplyText");
+  var replyKindEl = document.getElementById("liveReplyKind");
   var closeReplyBtn = document.getElementById("closeReplyBtn");
 
   var strokes = [];
@@ -1118,9 +1119,12 @@
   function hideMessage() {
     messageEl.className = "liveMessage hidden";
   }
-  function showReply(text) {
+  function showReply(text, intent) {
     emptyHintDismissed = true;
     if (emptyHintEl) emptyHintEl.hidden = true;
+    var isRedline = intent === "redline";
+    replyEl.className = isRedline ? "liveReply redlineReply" : "liveReply";
+    setText(replyKindEl, isRedline ? "Hermes redline suggestion" : "Hermes");
     setText(replyTextEl, text || "Hermes finished.");
     replyEl.hidden = false;
   }
@@ -1231,6 +1235,7 @@
     if (intent === "tasks") phases = ["Received", "Finding tasks", "Using Hermes", "Checking the page"];
     if (intent === "email") phases = ["Received", "Drafting", "Using Hermes", "Checking the page"];
     if (intent === "workpaper") phases = ["Received", "Reading marks", "Shaping workpaper notes", "Checking the page"];
+    if (intent === "redline") phases = ["Received", "Reading the marked content", "Drafting one suggestion", "Checking the page"];
     progressIndex = 0;
     if (progressTimer) window.clearInterval(progressTimer);
     setText(stateEl, phases[0]);
@@ -1343,6 +1348,7 @@
     if (intent === "tasks") return "Extract action items from the current HTML page and my marks. Group by owner, due date, and uncertainty.";
     if (intent === "email") return "Draft a concise email from the current HTML page and my marks. Do not send it.";
     if (intent === "workpaper") return "Turn the current HTML page and my marks into a workpaper-ready note: facts, evidence, open items, and risks.";
+    if (intent === "redline") return "Suggest one concise, non-destructive replacement for the marked page content, or one concise rationale if replacement is inappropriate. Anchor the suggestion in the marked content. Do not modify the page.";
     return "";
   }
 
@@ -1403,7 +1409,7 @@
       if (useStream && xhr.readyState >= 3 && xhr.responseText) {
         var raw = xhr.responseText;
         if (!streamHeader) { var nl = raw.indexOf("\n"); if (nl >= 0) { try { rememberChannel(JSON.parse(raw.slice(0,nl))); } catch(error){} streamHeader=true; streamStart=nl+1; } }
-        if (streamHeader) { var part=raw.slice(streamStart), rs=part.indexOf(String.fromCharCode(30)); if(rs>=0){streamText=part.slice(0,rs);try{streamTrailer=JSON.parse(part.slice(rs+1));}catch(error){}}else streamText=part; if(streamText&&streamText!==lastStreamPaint&&!streamPaintTimer)streamPaintTimer=window.setTimeout(function(){streamPaintTimer=null;lastStreamPaint=streamText;showReply(streamText);},160); }
+        if (streamHeader) { var part=raw.slice(streamStart), rs=part.indexOf(String.fromCharCode(30)); if(rs>=0){streamText=part.slice(0,rs);try{streamTrailer=JSON.parse(part.slice(rs+1));}catch(error){}}else streamText=part; if(streamText&&streamText!==lastStreamPaint&&!streamPaintTimer)streamPaintTimer=window.setTimeout(function(){streamPaintTimer=null;lastStreamPaint=streamText;showReply(streamText, requestedIntent);},160); }
       }
       if (xhr.readyState !== 4 || done) return;
       if (xhr.status < 200 || xhr.status >= 300) {
@@ -1427,7 +1433,7 @@
         clearPendingInkSend(liveInkSendId);
         setSendBusy(false);
         stopProgress(result.pageChanged ? "HTML updated" : "Hermes finished");
-        showReply(result.text);
+        showReply(result.text, requestedIntent);
         loadMetadata(true);
       } catch (error) {
         finishError(error.message);

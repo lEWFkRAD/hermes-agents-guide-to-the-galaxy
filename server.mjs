@@ -368,7 +368,8 @@ const KINDLE_INTENTS = new Map([
   ["summarize", "Summarize the current page or note. Start with the answer in one short paragraph, then add only the most useful detail."],
   ["tasks", "Extract tasks. Group them by owner, due date, and uncertainty. If a task is inferred from handwriting, label it inferred."],
   ["email", "Draft a concise email from the note or marked page. Do not send it. Put the draft first, then a short note about assumptions."],
-  ["workpaper", "Create a workpaper-ready note: facts, evidence, open items, risks, and next action. Keep amounts, dates, and names exact."]
+  ["workpaper", "Create a workpaper-ready note: facts, evidence, open items, risks, and next action. Keep amounts, dates, and names exact."],
+  ["redline", "Return exactly one concise, non-destructive proposed replacement for the marked page content. If replacement is inappropriate, return exactly one concise rationale instead. Anchor the suggestion in the marked DOM target and page text. Do not apply, publish, edit, or otherwise modify the page or its original HTML and ink."]
 ]);
 
 function normalizeKindleIntent(value) {

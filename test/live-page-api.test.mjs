@@ -389,7 +389,7 @@ test("live annotation send is claimed once and retries return the cached reply",
     const sendPayload = sendId => JSON.stringify({
       target: "hermes",
       text: "#client Use this annotation.",
-      intent: "tasks",
+      intent: "redline",
       source: "live-page",
       livePageRevision: pageRevision,
       liveInkSendId: sendId,
@@ -410,7 +410,7 @@ test("live annotation send is claimed once and retries return the cached reply",
     const completed = concurrent.find(response => response.status === 200);
     const completedJson = JSON.parse(completed.body);
     assert.equal(completedJson.text, "Changed the HTML once.");
-    assert.equal(completedJson.intent, "tasks");
+    assert.equal(completedJson.intent, "redline");
     assert.deepEqual(completedJson.tags, ["client"]);
     assert.equal(adapterCalls, 1);
     const sentToAdapter = JSON.parse(adapterBody);
@@ -418,7 +418,11 @@ test("live annotation send is claimed once and retries return the cached reply",
     assert.match(sentToAdapter.text, /Kindle is only the user's input and display surface/);
     assert.match(sentToAdapter.text, /Do real work normally when asked/);
     assert.match(sentToAdapter.text, /no tool or workflow is required/);
-    assert.match(sentToAdapter.text, /Intent: tasks/);
+    assert.match(sentToAdapter.text, /Intent: redline/);
+    assert.match(sentToAdapter.text, /exactly one concise, non-destructive proposed replacement/);
+    assert.match(sentToAdapter.text, /one concise rationale instead/);
+    assert.match(sentToAdapter.text, /Anchor the suggestion in the marked DOM target and page text/);
+    assert.match(sentToAdapter.text, /Do not apply, publish, edit, or otherwise modify the page/);
     assert.match(sentToAdapter.text, /Notebook tags: #client/);
     assert.match(sentToAdapter.text, /DOM annotation targets/);
     assert.match(sentToAdapter.text, /\[Current Live Page\]/);

@@ -287,6 +287,16 @@ body.viewMode #liveInk { pointer-events: none; }
   color: var(--ink);
 }
 
+.liveReply.redlineReply {
+  border-top: 5px double var(--ink);
+  background: var(--paper);
+}
+
+.liveReply.redlineReply > strong {
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
 .liveReply > strong {
   display: block;
   margin: 4px 80px 6px 0;
