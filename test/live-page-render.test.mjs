@@ -149,6 +149,15 @@ test("ordinary drawing does not rebuild every older stroke", async () => {
   assert.doesNotMatch(unchangedPoll, /rematerializeInk\(\)/);
 });
 
+test("large handwritten sends collapse duplicate DOM targets", async () => {
+  const server = await fs.readFile(path.join(repoRoot, "server.mjs"), "utf8");
+  const collector = server.slice(server.indexOf("function collectLiveDomAnchors"), server.indexOf("function livePageReadableText"));
+  assert.match(collector, /const grouped = new Map\(\)/);
+  assert.match(collector, /existing\.strokeCount \+= 1/);
+  assert.match(collector, /anchor\.strokeCount > 1/);
+  assert.doesNotMatch(collector, /if \(result\.length >= 24\)/);
+});
+
 test("blank-page hint stays dismissed after writing or a Hermes response", async () => {
   const source = await fs.readFile(path.join(repoRoot, "public", "live.js"), "utf8");
   assert.match(source, /var emptyHintDismissed = !!sessionId/);

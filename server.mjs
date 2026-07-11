@@ -400,15 +400,22 @@ function formatKindleContext({ intent = "", tags = [], rawTranscription = "", cl
 
 function collectLiveDomAnchors(ink, strokeIds) {
   const wanted = new Set(Array.isArray(strokeIds) ? strokeIds : []);
-  const result = [];
+  const grouped = new Map();
   for (const stroke of ink?.strokes || []) {
     if (!wanted.has(stroke.id)) continue;
     for (const anchor of stroke.anchors || []) {
-      result.push({ strokeId: stroke.id, baseRevision: stroke.baseRevision, ...anchor });
-      if (result.length >= 24) return result;
+      const key = JSON.stringify([anchor.selector || "", anchor.tag || "", anchor.text || "", anchor.rect || null]);
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.strokeCount += 1;
+        existing.hitCount = Math.max(existing.hitCount || 0, anchor.hitCount || 0);
+        existing.centered ||= Boolean(anchor.centered);
+      } else if (grouped.size < 12) {
+        grouped.set(key, { strokeId: stroke.id, strokeCount: 1, baseRevision: stroke.baseRevision, ...anchor });
+      }
     }
   }
-  return result;
+  return [...grouped.values()];
 }
 
 function formatLiveDomAnchors(anchors) {
@@ -416,7 +423,8 @@ function formatLiveDomAnchors(anchors) {
   const lines = anchors.map(anchor => {
     const flags = [anchor.centered ? "mark encloses/centers on element" : "stroke touches element", `hits=${anchor.hitCount}`].join(", ");
     const text = anchor.text ? `; text=${JSON.stringify(anchor.text)}` : "";
-    return `- stroke ${anchor.strokeId}: selector=${JSON.stringify(anchor.selector)}; element=<${anchor.tag || "unknown"}>${text}; ${flags}; normalizedRect=${JSON.stringify(anchor.rect)}`;
+    const strokes = anchor.strokeCount > 1 ? `${anchor.strokeCount} strokes` : `stroke ${anchor.strokeId}`;
+    return `- ${strokes}: selector=${JSON.stringify(anchor.selector)}; element=<${anchor.tag || "unknown"}>${text}; ${flags}; normalizedRect=${JSON.stringify(anchor.rect)}`;
   });
   return `[DOM annotation targets for revision ${anchors[0].baseRevision || "unknown"}]\nThese targets identify what the ink touches or surrounds. Use the ink image to decide whether the gesture means circle, cross-out, underline, arrow, or handwriting. Prefer these selectors and text snippets over guessing by screen position.\n${lines.join("\n")}\n[/DOM annotation targets]\n\n`;
 }
