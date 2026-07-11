@@ -81,6 +81,8 @@
   var lassoInkBtn = document.getElementById("lassoInkBtn");
   var rotateInkBtn = document.getElementById("rotateInkBtn");
   var deleteSelectionBtn = document.getElementById("deleteSelectionBtn");
+  var moveSelectionBtn = document.getElementById("moveSelectionBtn");
+  var askSelectionBtn = document.getElementById("askSelectionBtn");
   var backBtn = document.getElementById("backBtn");
   var liveHistoryBtn = document.getElementById("liveHistoryBtn");
   var liveNewBtn = document.getElementById("liveNewBtn");
@@ -113,6 +115,7 @@
   var lassoPoints = [];
   var selectedStrokeIds = [];
   var clearArmed = false, clearTimer = null;
+  var moveMode=false,movingSelection=false,moveStart=null,moveOriginals=[];
   var INK_STORAGE_KEY = "livePageInkV1";
   var INK_CLIENT_KEY = "livePageInkClientV2";
   var INK_MIGRATION_KEY = "livePageInkMigratedV2";
@@ -334,6 +337,8 @@
     if (rotateInkBtn) rotateInkBtn.disabled = sendBusy || !selectedStrokeIds.length;
     var selectionActions=document.getElementsByClassName?document.getElementsByClassName("selectionAction"):[]; for(var sa=0;sa<selectionActions.length;sa+=1)selectionActions[sa].hidden=!selectedStrokeIds.length;
     if(deleteSelectionBtn)deleteSelectionBtn.disabled=sendBusy||!selectedStrokeIds.length;
+    if(moveSelectionBtn)moveSelectionBtn.disabled=sendBusy||!selectedStrokeIds.length;
+    if(askSelectionBtn)askSelectionBtn.disabled=sendBusy||!selectedStrokeIds.length;
   }
 
   function saveInk() {
@@ -888,6 +893,7 @@
 
   function startInk(event) {
     if (!drawMode || sendBusy || pendingInkSend) return true;
+    if(moveMode&&selectedStrokeIds.length){movingSelection=true;moveStart=pointFromEvent(event);moveOriginals=[];for(var mi=0;mi<strokes.length;mi+=1)if(selectedStrokeIds.indexOf(strokes[mi].id)>=0)moveOriginals.push({index:mi,stroke:JSON.parse(JSON.stringify(strokes[mi]))});return stopEvent(event);}
     if (lassoMode) { lassoing = true; lassoPoints = [pointFromEvent(event)]; return stopEvent(event); }
     if (eraserMode) {
       var eraserPoint = pointFromEvent(event), removedIds = [];
@@ -937,6 +943,7 @@
   }
 
   function moveInk(event) {
+    if(movingSelection){var mp=pointFromEvent(event),dx=mp.x-moveStart.x,dy=mp.y-moveStart.y;for(var mo=0;mo<moveOriginals.length;mo+=1){var shifted=JSON.parse(JSON.stringify(moveOriginals[mo].stroke));for(var mpt=0;mpt<shifted.points.length;mpt+=1){shifted.points[mpt].x=Math.max(0,Math.min(1,shifted.points[mpt].x+dx));shifted.points[mpt].y=Math.max(0,Math.min(1,shifted.points[mpt].y+dy));}strokes[moveOriginals[mo].index]=shifted;}redrawInk();return stopEvent(event);}
     if (lassoing) { lassoPoints.push(pointFromEvent(event)); return stopEvent(event); }
     if (!drawing || !currentStroke) return stopEvent(event);
     var samples = [event];
@@ -980,6 +987,7 @@
   }
 
   function endInk(event) {
+    if(movingSelection){movingSelection=false;var oldIds=[],newIds=[];for(var mm=0;mm<moveOriginals.length;mm+=1){oldIds.push(moveOriginals[mm].stroke.id);var moved=strokes[moveOriginals[mm].index];moved.id=nextInkId("stroke");moved.sent=false;newIds.push(moved.id);queueInkOperation("add",{stroke:moved});}queueInkOperation("delete",{ids:oldIds});selectedStrokeIds=newIds;moveMode=false;if(moveSelectionBtn)moveSelectionBtn.className="selectionAction";saveInk();redrawInk();updateInkButtons();setText(stateEl,"Selection moved");return stopEvent(event);}
     if (lassoing) {
       lassoing = false;
       if (lassoPoints.length > 2) {
@@ -1132,6 +1140,7 @@
     queueInkOperation("delete",{ids:oldIds}); selectedStrokeIds=[]; redrawInk();saveInk();updateInkButtons();
   }
   function deleteSelection(){if(!selectedStrokeIds.length)return;var ids=selectedStrokeIds.slice(0),kept=[];for(var i=0;i<strokes.length;i+=1)if(ids.indexOf(strokes[i].id)<0)kept.push(strokes[i]);strokes=kept;selectedStrokeIds=[];queueInkOperation("delete",{ids:ids});redrawInk();saveInk();updateInkButtons();setText(stateEl,"Selection deleted");}
+  function toggleMoveSelection(){moveMode=!moveMode;lassoMode=false;if(lassoInkBtn)lassoInkBtn.className="";if(moveSelectionBtn)moveSelectionBtn.className=moveMode?"selectionAction active":"selectionAction";setText(stateEl,moveMode?"Drag selection to move":"Selection ready");}
 
   function pasteInk() {
     for (var i = 0; i < inkClipboard.length; i += 1) {
@@ -1461,6 +1470,8 @@
   add(lassoInkBtn, "click", toggleLasso);
   add(rotateInkBtn, "click", rotateSelection);
   add(deleteSelectionBtn, "click", deleteSelection);
+  add(moveSelectionBtn, "click", toggleMoveSelection);
+  add(askSelectionBtn, "click", function(){sendInkToHermes("");});
   add(window, "focus", function () { refreshInkFromServer(true); });
   add(window, "storage", function (event) {
     var key = event && event.key ? String(event.key) : "";
