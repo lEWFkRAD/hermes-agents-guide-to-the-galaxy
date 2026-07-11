@@ -2,28 +2,45 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "agent/**", "feat/**", "fix/**", "ci/**"]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  test:
+  node:
+    name: Node ${{ matrix.node-version }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20.x, 22.x]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ matrix.node-version }}
+      - run: npm run lint
+      - run: npm test
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: NousResearch/hermes-agent
+          path: .hermes-agent
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: npm test
-      - run: python -m pip install pytest aiohttp
+      - run: python -m pip install -e ".hermes-agent[dev,messaging]"
       - run: python -m pytest test/kindle-plugin -q
-      - name: Syntax checks
+        env:
+          PYTHONPATH: .hermes-agent
+      - name: Python syntax check
         run: |
-          node --check server.mjs
-          node --check public/app.js
           python -m compileall -q kindle-plugin

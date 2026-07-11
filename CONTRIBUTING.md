@@ -21,6 +21,9 @@ See the README for optional Hermes adapter and runtime configuration. Never comm
 
 Run every validation command in `AGENTS.md` before submitting. State clearly which checks ran and whether a physical Kindle was used.
 
+All changes to `main` go through a pull request. Required CI must pass and all
+review conversations must be resolved before squash or rebase merge.
+
 ## Issues and security
 
 Search existing issues and pull requests first. Bug reports need reproduction steps, expected and actual behavior, and a sanitized environment description. Feature requests should lead with the problem.

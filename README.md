@@ -12,6 +12,9 @@ Community contributions, including reviewed AI-assisted contributions, are
 welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).
 This project is available under the [MIT License](LICENSE).
 
+Run `npm run lint` and `npm test` before contributing. Security-sensitive bugs
+must be reported privately as described in [SECURITY.md](SECURITY.md).
+
 ## How it works
 
 ```

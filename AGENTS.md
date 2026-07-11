@@ -31,8 +31,13 @@ Instructions for human and AI contributors working in this repository.
 
 ```text
 npm test
+npm run lint
 python -m pytest test/kindle-plugin -q
 node --check server.mjs
 node --check public/app.js
 python -m compileall -q kindle-plugin
 ```
+
+If AI materially generated or transformed a change, disclose that in the pull
+request and list the checks actually run. Never invent validation or claim a
+physical-device check that was not performed.
