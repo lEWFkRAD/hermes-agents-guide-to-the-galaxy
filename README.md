@@ -25,6 +25,38 @@ The Kindle never sees the Hermes API or adapter tokens. The bridge transcribes
 the handwriting locally, submits text to Hermes's authenticated localhost-only
 Kindle platform adapter, and receives the completed tool-assisted agent reply.
 
+## Supported setup
+
+The currently supported baseline is intentionally narrow:
+
+- **Node.js:** 20 or 22, matching CI. The diary has no npm runtime dependencies.
+- **Host:** Windows 11 is the real-device reference environment. The Node server
+  and tests also run on Linux; the included Task Scheduler, `.cmd`, PowerShell,
+  and VBScript helpers are Windows-only and optional.
+- **Hermes Agent:** use `lEWFkRAD/hermes-agent` branch `feat/kindle-platform`
+  until [NousResearch/hermes-agent#61687](https://github.com/NousResearch/hermes-agent/pull/61687)
+  merges; afterward, use the upstream release containing that change. Configure
+  the Gateway and enable the installed `kindle-scribe` plugin.
+- **Device:** a stock Kindle Scribe using its built-in browser on the same LAN,
+  or through the explicitly configured Tailscale Funnel path. Desktop browsers
+  are useful for smoke tests but do not prove e-ink interaction quality.
+
+From a fresh clone, validate before configuring a device:
+
+```powershell
+npm run lint
+npm test
+npm start
+Invoke-RestMethod http://127.0.0.1:8791/api/config
+```
+
+The default notebook, local history, artifact workspaces, and Kindle plugin are
+present on `main`. Outlook/PST support under `integrations/` is optional and
+requires its own local credentials. The expanded Live Page annotations and
+Journey work in [PR #1](https://github.com/lEWFkRAD/hermes-agents-guide-to-the-galaxy/pull/1)
+is experimental and is not part of `main`. Remote access is also optional; read
+the [deployment threat model](SECURITY.md#deployment-threat-model) first.
+
 ## Run it
 
 First install and enable the optional Hermes platform plugin. It lives in
