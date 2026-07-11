@@ -1,11 +1,17 @@
 {
   "name": "hermes-diary",
   "version": "0.1.0",
+  "description": "A handwriting-first Kindle Scribe notebook bridge for Hermes.",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
     "backup": "node scripts/backup-data.mjs",
+    "lint": "node scripts/check-style.mjs",
     "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

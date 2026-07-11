@@ -1,0 +1,72 @@
+name: Bug report
+description: Report broken Kindle diary behavior
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Do not include private diary content,
+        handwriting images, tokens, remote bookmark keys, or client data.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What broke?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Kindle Scribe browser UI
+        - Handwriting or OCR
+        - Hermes channel
+        - Live Page
+        - Artifact workspace
+        - Install or startup
+        - Backup or retention
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Start the diary bridge with ...
+        2. Open the Kindle browser at ...
+        3. Tap ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: Kindle Scribe browser, Windows host, Node version, LAN or remote
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs or screenshots
+      description: Remove tokens, diary text, host secrets, and private Hermes responses.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed private diary content, credentials, and remote bookmark keys.
+          required: true

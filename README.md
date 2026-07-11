@@ -6,6 +6,21 @@ Hermes answers, and the reply forms on the page or in a side pane. Runs as a
 tiny local web app because a stock Scribe can't sideload native apps — the
 browser is the only channel, so the app is built to feel like one.
 
+## Community
+
+This project is open source under the Apache License 2.0. Before contributing,
+read `CONTRIBUTING.md` and `AGENTS.md`, especially the privacy rules around
+diary content, handwriting images, tokens, remote bookmark keys, and Hermes
+responses. GitHub issue and pull request templates are included to keep reports
+focused and reviewable.
+
+Run the baseline checks before sending changes:
+
+```powershell
+npm.cmd run lint
+npm.cmd test
+```
+
 ## How it works
 
 ```

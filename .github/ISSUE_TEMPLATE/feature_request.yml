@@ -1,0 +1,53 @@
+name: Feature request
+description: Suggest a scoped Kindle diary improvement
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please focus on the Kindle Scribe workflow and avoid sharing private
+        diary content, tokens, remote bookmark keys, or client data.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user need or workflow gap should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should change?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Kindle Scribe browser UI
+        - Handwriting or OCR
+        - Hermes channel
+        - Live Page
+        - Artifact workspace
+        - Install or startup
+        - Backup or retention
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints and risks
+      description: Note e-ink performance, auth, data retention, or Hermes boundary concerns.
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I am willing to work on a focused pull request for this.
+          required: false
