@@ -17,11 +17,12 @@ async function journeySources() {
 test("Journey is loaded beside the live page and adds its button to the pencil palette", async () => {
   const { html, source } = await journeySources();
   assert.match(html, /live-journey\.css\?v=3/);
-  assert.match(html, /live-journey\.js\?v=3/);
+  assert.match(html, /live-journey\.js\?v=4/);
   assert.match(source, /journeyBtn\.id = "journeyBtn"/);
   assert.match(source, /backBtn\.parentNode\.insertBefore\(journeyBtn, backBtn\)/);
   assert.match(source, /aria-haspopup", "dialog"/);
-  assert.match(source, /setText\(journeyBtn, "Journey"\)/);
+  assert.match(source, /aria-label", "Journey"/);
+  assert.match(source, /setText\(journeyBtn, "\\u25b6"\)/);
 });
 
 test("Journey uses lightweight metadata and revision content endpoints with existing auth", async () => {

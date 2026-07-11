@@ -197,6 +197,9 @@ button { -webkit-appearance:none; appearance:none; box-shadow:none !important; t
 .liveIdentity,.annotationTools,.pillMenu,.liveReply,.liveHistory,.historyItem { box-shadow:none !important; border-radius:0 !important; background:var(--paper); }
 .annotationToggle { box-shadow:none !important; border-radius:0 !important; }
 .annotationTools button.active,.menuPill[aria-expanded="true"] { background:var(--ink); color:var(--paper); }
+#hermesTools { min-width:0; flex-direction:row; padding:4px; gap:4px; }
+#hermesTools .cornerIcon { width:44px; min-width:44px; height:44px; padding:0; display:flex; align-items:center; justify-content:center; border:1px solid var(--ink); background:var(--paper); color:var(--ink); font:700 22px/1 Arial,sans-serif; }
+#hermesTools .primaryIcon { background:var(--ink); color:var(--paper); font-size:28px; font-weight:400; }
 .livingSurface {
   position: relative;
   flex: 1 1 auto;

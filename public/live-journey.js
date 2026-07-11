@@ -69,7 +69,10 @@
   journeyBtn.type = "button";
   journeyBtn.setAttribute("aria-haspopup", "dialog");
   journeyBtn.setAttribute("aria-controls", "journeyOverlay");
-  setText(journeyBtn, "Journey");
+  journeyBtn.className = "cornerIcon";
+  journeyBtn.setAttribute("aria-label", "Journey");
+  journeyBtn.setAttribute("title", "Journey");
+  setText(journeyBtn, "\u25b6");
   var backBtn = document.getElementById("backBtn");
   if (backBtn && backBtn.parentNode) backBtn.parentNode.insertBefore(journeyBtn, backBtn);
   else toolbar.appendChild(journeyBtn);
