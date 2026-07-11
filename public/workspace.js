@@ -13,6 +13,8 @@
   var fileEl = document.getElementById("artifactFile");
   var modeEl = document.getElementById("workspaceMode");
   var newBtn = document.getElementById("newWorkspaceBtn");
+  var workspaceLab = document.getElementById("workspaceLab");
+  var brainstormIdeas = document.getElementById("brainstormIdeas");
   var statusEl = document.getElementById("workspaceStatus");
   var workbench = document.getElementById("artifactWorkbench");
   var surface = document.getElementById("artifactSurface");
@@ -47,6 +49,102 @@
     statusEl.textContent = text;
   }
 
+  function isDark() {
+    if ((" " + document.body.className + " ").indexOf(" dark ") >= 0) return true;
+    try { return window.localStorage.getItem("diaryDark") === "1"; } catch (e) { return false; }
+  }
+
+  function brainstormDocument(kind) {
+    var dark = isDark();
+    var paper = dark ? "#15140f" : "#fbfaf4";
+    var ink = dark ? "#e9e7e0" : "#111111";
+    var faint = dark ? "#5b574d" : "#b9b2a4";
+    var shapes = "";
+
+    if (kind === "map") {
+      shapes = '<div class="map lines"><i></i><i></i><i></i><i></i></div>' +
+        '<div class="node center"></div><div class="node northWest"></div>' +
+        '<div class="node northEast"></div><div class="node southWest"></div>' +
+        '<div class="node southEast"></div>';
+    } else if (kind === "path") {
+      shapes = '<div class="pathLine"></div><div class="pathBox one"></div>' +
+        '<div class="pathBox two"></div><div class="pathBox three"></div>';
+    } else if (kind === "grid") {
+      shapes = '<div class="fourGrid"><div></div><div></div><div></div><div></div></div>';
+    }
+
+    return '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+      '<title>Brainstorm</title><style>' +
+      '*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden}' +
+      'body{position:relative;background:' + paper + ';color:' + ink + ';font-family:Georgia,serif}' +
+      '.node,.pathBox,.fourGrid>div{position:absolute;border:2px solid ' + faint + ';background:' + paper + '}' +
+      '.node{width:16%;height:16%;min-width:62px;min-height:62px;border-radius:50%}' +
+      '.center{left:42%;top:42%}.northWest{left:12%;top:12%}.northEast{right:12%;top:12%}' +
+      '.southWest{left:12%;bottom:12%}.southEast{right:12%;bottom:12%}' +
+      '.lines i{position:absolute;left:25%;top:50%;width:50%;border-top:2px solid ' + faint + ';transform-origin:center}' +
+      '.lines i:nth-child(1){transform:rotate(32deg)}.lines i:nth-child(2){transform:rotate(-32deg)}' +
+      '.lines i:nth-child(3){transform:rotate(148deg)}.lines i:nth-child(4){transform:rotate(-148deg)}' +
+      '.pathLine{position:absolute;left:15%;right:15%;top:50%;border-top:2px solid ' + faint + '}' +
+      '.pathBox{top:39%;width:20%;height:22%;border-radius:10px}.pathBox.one{left:7%}' +
+      '.pathBox.two{left:40%}.pathBox.three{right:7%}' +
+      '.fourGrid{position:absolute;inset:8%;display:grid;grid-template-columns:1fr 1fr;gap:5%}' +
+      '.fourGrid>div{position:static;min-height:0}' +
+      '</style></head><body>' + shapes + '</body></html>';
+  }
+
+  function templateLabel(kind) {
+    return { blank: "Blank", map: "Map", path: "Path", grid: "Grid" }[kind] || "Blank";
+  }
+
+  function showBrainstormChoices(show) {
+    if (!brainstormIdeas) return;
+    brainstormIdeas.hidden = !show;
+    if (workspaceLab) {
+      if (show) workspaceLab.classList.add("brainstormMode");
+      else workspaceLab.classList.remove("brainstormMode");
+    }
+  }
+
+  function startBrainstorm(kind) {
+    var label = templateLabel(kind);
+    workspace = null;
+    artifact = null;
+    strokes = [];
+    workbench.hidden = true;
+    fileEl.value = "";
+    showBrainstormChoices(false);
+    newBtn.disabled = true;
+    setStatus("Opening " + label.toLowerCase() + " page…");
+
+    request("POST", "/api/workspaces", {
+      title: label + " brainstorm",
+      mode: "brainstorm"
+    }).then(function (result) {
+      workspace = result.workspace;
+      return request("POST", "/api/workspaces/" + workspace.id + "/artifacts", {
+        type: "html",
+        name: label,
+        content: brainstormDocument(kind)
+      });
+    }).then(function (result) {
+      workspace = result.workspace;
+      artifact = result.artifact;
+      try { window.localStorage.setItem("artifactWorkspaceId", workspace.id); } catch (e) {}
+      try { window.localStorage.setItem("artifactActiveId", artifact.id); } catch (e) {}
+      showArtifact();
+      setStatus(label + " ready. Draw anywhere.");
+      newBtn.disabled = false;
+      window.setTimeout(function () {
+        if (workbench.scrollIntoView) workbench.scrollIntoView(true);
+      }, 40);
+    }).catch(function (error) {
+      showBrainstormChoices(true);
+      newBtn.disabled = false;
+      setStatus(error.message);
+    });
+  }
+
   function request(method, url, body) {
     return new Promise(function (resolve, reject) {
       var xhr = new XMLHttpRequest();
@@ -76,7 +174,7 @@
 
   function redraw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.strokeStyle = "#b3271e";
+    ctx.strokeStyle = isDark() ? "#f2efe7" : "#171612";
     ctx.lineWidth = 3;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
@@ -85,6 +183,13 @@
 
   function drawStroke(stroke) {
     if (!stroke.points.length) return;
+    if (stroke.points.length === 1) {
+      ctx.beginPath();
+      ctx.arc(stroke.points[0].x * canvas.width, stroke.points[0].y * canvas.height, 1.8, 0, Math.PI * 2);
+      ctx.fillStyle = isDark() ? "#f2efe7" : "#171612";
+      ctx.fill();
+      return;
+    }
     ctx.beginPath();
     ctx.moveTo(stroke.points[0].x * canvas.width, stroke.points[0].y * canvas.height);
     for (var i = 1; i < stroke.points.length; i += 1) {
@@ -105,13 +210,19 @@
 
   function stop(event) {
     if (event.preventDefault) event.preventDefault();
+    if (event.stopPropagation) event.stopPropagation();
+    event.returnValue = false;
     return false;
   }
 
   function startInk(event) {
+    if (event.pointerId !== undefined && surface.setPointerCapture) {
+      try { surface.setPointerCapture(event.pointerId); } catch (e) {}
+    }
     current = { id: "stroke_" + Date.now().toString(36), width: 3, points: [point(event)] };
     strokes.push(current);
     drawing = true;
+    redraw();
     return stop(event);
   }
 
@@ -127,9 +238,41 @@
   }
 
   function endInk(event) {
+    redraw();
     drawing = false;
     current = null;
     return stop(event);
+  }
+
+  function addEvent(element, name, handler) {
+    if (!element) return;
+    if (element.addEventListener) element.addEventListener(name, handler, false);
+    else if (element.attachEvent) element.attachEvent("on" + name, handler);
+  }
+
+  function bindInkEvents(element) {
+    if (window.PointerEvent) {
+      addEvent(element, "pointerdown", startInk);
+      addEvent(element, "pointermove", moveInk);
+      addEvent(element, "pointerup", endInk);
+      addEvent(element, "pointercancel", endInk);
+      addEvent(element, "pointerleave", endInk);
+    } else if (window.MSPointerEvent) {
+      addEvent(element, "MSPointerDown", startInk);
+      addEvent(element, "MSPointerMove", moveInk);
+      addEvent(element, "MSPointerUp", endInk);
+    } else if ("ontouchstart" in window) {
+      addEvent(element, "touchstart", startInk);
+      addEvent(element, "touchmove", moveInk);
+      addEvent(element, "touchend", endInk);
+      addEvent(element, "touchcancel", endInk);
+    } else {
+      addEvent(element, "mousedown", startInk);
+      addEvent(element, "mousemove", moveInk);
+      addEvent(element, "mouseup", endInk);
+      addEvent(element, "mouseleave", endInk);
+      addEvent(document, "mouseup", endInk);
+    }
   }
 
   function ensureWorkspace() {
@@ -201,6 +344,12 @@
     workbench.hidden = true;
     fileEl.value = "";
     try { window.localStorage.removeItem("artifactActiveId"); } catch (e) {}
+    if (modeEl.value === "brainstorm") {
+      try { window.localStorage.removeItem("artifactWorkspaceId"); } catch (e) {}
+      showBrainstormChoices(true);
+      setStatus("Pick a starting page.");
+      return;
+    }
     ensureWorkspace().then(function () {
       setStatus("New workspace ready. Choose an artifact.");
     }).catch(function (error) { setStatus(error.message); });
@@ -274,16 +423,23 @@
 
   fileEl.addEventListener("change", importArtifact, false);
   newBtn.addEventListener("click", newWorkspace, false);
+  modeEl.addEventListener("change", function () {
+    var brainstorming = modeEl.value === "brainstorm";
+    showBrainstormChoices(brainstorming);
+    setStatus(brainstorming ? "Pick a starting page." : "Choose an image or HTML file to begin.");
+  }, false);
+  if (brainstormIdeas) brainstormIdeas.addEventListener("click", function (event) {
+    var target = event.target;
+    while (target && target !== brainstormIdeas && !target.getAttribute("data-brainstorm-template")) {
+      target = target.parentNode;
+    }
+    if (!target || target === brainstormIdeas) return;
+    startBrainstorm(target.getAttribute("data-brainstorm-template"));
+  }, false);
   clearAnnotationBtn.addEventListener("click", clearInk, false);
   saveAnnotationBtn.addEventListener("click", saveAnnotation, false);
   analyzeBtn.addEventListener("click", analyze, false);
-  canvas.addEventListener("pointerdown", startInk, false);
-  canvas.addEventListener("pointermove", moveInk, false);
-  canvas.addEventListener("pointerup", endInk, false);
-  canvas.addEventListener("pointercancel", endInk, false);
-  canvas.addEventListener("touchstart", startInk, false);
-  canvas.addEventListener("touchmove", moveInk, false);
-  canvas.addEventListener("touchend", endInk, false);
+  bindInkEvents(surface);
   window.addEventListener("resize", resizeCanvas, false);
 
   // Resume the last workspace after a refresh. The bridge remains the source
@@ -301,10 +457,16 @@
         }
         if (!artifact && artifacts.length) artifact = artifacts[artifacts.length - 1];
         if (artifact) {
+          showBrainstormChoices(false);
           showArtifact();
           setStatus("Workspace restored. Draw a new annotation or continue the review.");
         } else {
-          setStatus("Workspace restored. Choose an artifact.");
+          if (modeEl.value === "brainstorm") {
+            showBrainstormChoices(true);
+            setStatus("Pick a starting page.");
+          } else {
+            setStatus("Workspace restored. Choose an artifact.");
+          }
         }
       }).catch(function () {
         try { window.localStorage.removeItem("artifactWorkspaceId"); } catch (e) {}
@@ -312,4 +474,5 @@
       });
     }
   } catch (e) {}
+  showBrainstormChoices(false);
 }());

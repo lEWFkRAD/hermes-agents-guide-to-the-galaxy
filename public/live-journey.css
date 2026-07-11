@@ -1,0 +1,201 @@
+.journeyOverlay {
+  position: fixed;
+  z-index: 30;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: hidden;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.journeyOverlay[hidden] { display: none !important; }
+
+.journeyBar {
+  position: absolute;
+  z-index: 5;
+  top: 0;
+  right: 0;
+  left: 0;
+  min-height: 56px;
+  padding: 6px 8px;
+  border-bottom: 2px solid var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--paper);
+}
+
+.journeyHeading {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.journeyHeading strong,
+.journeyHeading span { display: block; }
+
+.journeyHeading strong {
+  font-size: 19px;
+  line-height: 1.1;
+}
+
+.journeyHeading span {
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--muted);
+  font: 12px/1.2 Arial, sans-serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.journeyBar button,
+.journeyTransport button {
+  min-width: 62px;
+  min-height: 44px;
+  padding: 5px 9px;
+  border: 2px solid var(--ink);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 700 13px/1.1 Arial, sans-serif;
+}
+
+.journeyBar button { min-width: 68px; }
+
+.journeyStage {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  overflow: hidden;
+  background: var(--paper);
+}
+
+.journeyViewport {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  left: 0;
+  overflow: hidden;
+  background: var(--paper);
+  transform-origin: 0 0;
+}
+
+#journeyFrame,
+#journeyInk {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+#journeyFrame {
+  z-index: 1;
+  background: var(--paper);
+  pointer-events: none;
+}
+
+#journeyInk {
+  z-index: 2;
+  pointer-events: none;
+  shape-rendering: geometricPrecision;
+}
+
+.journeyMessage {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 20px;
+  line-height: 1.35;
+  text-align: center;
+  pointer-events: none;
+}
+
+.journeyMessage.hidden { display: none; }
+
+.journeyControls {
+  position: absolute;
+  z-index: 5;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 7px 8px 8px;
+  border-top: 2px solid var(--ink);
+  background: var(--soft);
+}
+
+.journeyTransport {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+
+.journeyTransport button { min-width: 82px; }
+
+.journeyProgressRow {
+  min-height: 44px;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#journeyProgress {
+  min-width: 0;
+  width: 100%;
+  height: 44px;
+  margin: 0;
+  flex: 1 1 auto;
+  accent-color: var(--ink);
+}
+
+#journeyProgressText {
+  min-width: 118px;
+  color: var(--muted);
+  font: 700 12px/1.2 Arial, sans-serif;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.journeyBar button:focus,
+.journeyTransport button:focus,
+#journeyProgress:focus {
+  outline: 3px solid var(--line);
+  outline-offset: 2px;
+}
+
+.journeyBar button:disabled,
+.journeyTransport button:disabled,
+#journeyProgress:disabled { opacity: .42; }
+
+@media (max-width: 470px) {
+  .journeyBar { min-height: 52px; padding: 4px 5px; }
+  .journeyHeading strong { font-size: 17px; }
+  .journeyHeading span { max-width: 210px; }
+  .journeyControls { padding: 5px; }
+  .journeyTransport { gap: 4px; }
+  .journeyTransport button { min-width: 70px; }
+  .journeyProgressRow { gap: 6px; }
+  #journeyProgressText { min-width: 100px; font-size: 11px; }
+}

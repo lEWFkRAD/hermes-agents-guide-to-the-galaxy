@@ -1,7 +1,11 @@
 import http from "node:http";
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { LivePageStore, createLivePageTemplate, renderLivingDocument } from "./lib/live-page.mjs";
+import { LiveInkStore } from "./lib/live-page-ink.mjs";
+import { LivePageJourneyStore } from "./lib/live-page-journey.mjs";
 import { WorkspaceStore } from "./lib/workspaces.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -11,9 +15,19 @@ const sessionsFile = path.join(dataDir, "sessions.json");
 const imagesDir = path.join(dataDir, "images");
 const archiveDir = path.join(dataDir, "archive");
 const workspaceStore = new WorkspaceStore(dataDir);
+const livePageStore = new LivePageStore(dataDir);
+const liveInkStore = new LiveInkStore(dataDir);
+const liveJourneyStore = new LivePageJourneyStore(dataDir);
+const liveWriteTokenFile = path.join(dataDir, "live-page-write.token");
+const liveSourceFile = path.join(dataDir, "live-page-source.html");
+const liveTransitionFile = path.join(dataDir, "live-page-transition.json");
+const livePublisherScript = path.join(__dirname, "scripts", "publish-live-page.mjs");
 
 let sessions = [];
 let imageSeq = 0;
+let liveStateQueue = Promise.resolve();
+let livePendingTransition = null;
+let liveTransitionSequence = 0;
 
 // Record separator: marks the boundary between streamed reply text and the
 // trailing JSON metadata line. Never appears in normal model output.
@@ -140,6 +154,7 @@ const kindleUser = process.env.KINDLE_USER || "kindle";
 // The page is served openly; only the API (which reaches models + your data) is gated.
 const authToken = process.env.DIARY_AUTH_TOKEN || "";
 const remoteAccessKey = process.env.DIARY_REMOTE_KEY || "";
+let liveWriteToken = "";
 const trustedIps = new Set(String(process.env.DIARY_TRUSTED_IPS || "")
   .split(",")
   .map(value => value.trim())
@@ -147,6 +162,11 @@ const trustedIps = new Set(String(process.env.DIARY_TRUSTED_IPS || "")
 
 function remoteIp(req) {
   return String(req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
+}
+
+function isLoopback(req) {
+  const ip = remoteIp(req);
+  return ip === "127.0.0.1" || ip === "::1";
 }
 
 function isRemoteHost(req) {
@@ -160,7 +180,7 @@ function remoteKeyOk(req) {
   try {
     const url = new URL(req.url, "http://diary.local");
     if (url.searchParams.get("rk") === remoteAccessKey) return true;
-    const match = url.pathname.match(/^\/remote\/([^/]+)\/?$/);
+    const match = url.pathname.match(/^\/remote\/([^/]+)(?:\/live\/?)?$/);
     return Boolean(match && decodeURIComponent(match[1]) === remoteAccessKey);
   } catch {
     return false;
@@ -184,6 +204,37 @@ function authOk(req) {
     if (u.searchParams.get("k") === authToken) return true;
   } catch {}
   return false;
+}
+
+async function loadLiveWriteToken() {
+  const configured = String(process.env.DIARY_LIVE_WRITE_TOKEN || "").trim();
+  if (configured) return configured;
+  try {
+    const stored = (await fs.readFile(liveWriteTokenFile, "utf8")).trim();
+    if (stored) return stored;
+  } catch {}
+  await fs.mkdir(dataDir, { recursive: true });
+  const generated = crypto.randomBytes(32).toString("base64url");
+  try {
+    await fs.writeFile(liveWriteTokenFile, generated, { encoding: "utf8", mode: 0o600, flag: "wx" });
+    return generated;
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+    return (await fs.readFile(liveWriteTokenFile, "utf8")).trim();
+  }
+}
+
+function sameSecret(actual, expected) {
+  const left = Buffer.from(String(actual || ""));
+  const right = Buffer.from(String(expected || ""));
+  return left.length === right.length && left.length > 0 && crypto.timingSafeEqual(left, right);
+}
+
+function livePageWriteOk(req) {
+  // Funnel terminates on this machine, so its socket may appear local. The
+  // public Host boundary is therefore checked as well as the peer address.
+  if (isRemoteHost(req) || !isLoopback(req)) return false;
+  return sameSecret(req.headers["x-diary-live-write"], liveWriteToken);
 }
 
 async function loadHermesToken() {
@@ -228,24 +279,25 @@ function logSend(event) {
   console.log(line);
 }
 
-function send(res, status, body, type = "application/json; charset=utf-8") {
+function send(res, status, body, type = "application/json; charset=utf-8", extraHeaders = {}) {
   res.writeHead(status, {
     "content-type": type,
     "cache-control": "no-store",
     "access-control-allow-origin": "*",
     "access-control-allow-methods": "GET,POST,OPTIONS",
-    "access-control-allow-headers": "content-type,authorization,x-diary-auth,x-diary-remote-key"
+    "access-control-allow-headers": "content-type,authorization,x-diary-auth,x-diary-remote-key",
+    ...extraHeaders
   });
   res.end(body);
 }
 
-function readBody(req) {
+function readBody(req, maxChars = 12_000_000) {
   return new Promise((resolve, reject) => {
     let data = "";
     req.setEncoding("utf8");
     req.on("data", chunk => {
       data += chunk;
-      if (data.length > 12_000_000) {
+      if (data.length > maxChars) {
         reject(new Error("Request too large"));
         req.destroy();
       }
@@ -265,7 +317,70 @@ function choiceText(json) {
   return JSON.stringify(json, null, 2);
 }
 
-function buildMessages({ text, imageDataUrl, history = [] }) {
+const KINDLE_INTENTS = new Map([
+  ["summarize", "Summarize the current page or note. Start with the answer in one short paragraph, then add only the most useful detail."],
+  ["tasks", "Extract tasks. Group them by owner, due date, and uncertainty. If a task is inferred from handwriting, label it inferred."],
+  ["email", "Draft a concise email from the note or marked page. Do not send it. Put the draft first, then a short note about assumptions."],
+  ["workpaper", "Create a workpaper-ready note: facts, evidence, open items, risks, and next action. Keep amounts, dates, and names exact."]
+]);
+
+function normalizeKindleIntent(value) {
+  const key = String(value || "").trim().toLowerCase();
+  return KINDLE_INTENTS.has(key) ? key : "";
+}
+
+function extractNotebookTags(text) {
+  const tags = [];
+  const seen = new Set();
+  for (const match of String(text || "").matchAll(/(^|[\s([{])#([A-Za-z][A-Za-z0-9_-]{1,31})\b/g)) {
+    const tag = match[2].toLowerCase();
+    if (!seen.has(tag)) {
+      seen.add(tag);
+      tags.push(tag);
+    }
+  }
+  return tags.slice(0, 12);
+}
+
+function stripNotebookTags(text) {
+  return String(text || "").replace(/(^|[\s([{])#([A-Za-z][A-Za-z0-9_-]{1,31})\b/g, "$1").replace(/[ \t]{2,}/g, " ").trim();
+}
+
+function formatKindleContext({ intent = "", tags = [], rawTranscription = "", cleanedTranscription = "", source = "" } = {}) {
+  const lines = [];
+  if (intent && KINDLE_INTENTS.has(intent)) lines.push(`Intent: ${intent}. ${KINDLE_INTENTS.get(intent)}`);
+  if (tags.length) lines.push(`Notebook tags: ${tags.map(tag => "#" + tag).join(", ")}.`);
+  if (source === "live-page") lines.push("Source: this message was handwritten over the current Live Page.");
+  if (rawTranscription && cleanedTranscription && rawTranscription !== cleanedTranscription) {
+    lines.push(`OCR uncertainty: raw transcription was ${JSON.stringify(rawTranscription)}; cleaned transcription was ${JSON.stringify(cleanedTranscription)}. If a name, date, dollar amount, or command depends on this difference, say what is uncertain and give the likely alternative.`);
+  }
+  return lines.length ? `[Kindle note context]\n${lines.join("\n")}\n[/Kindle note context]\n\n` : "";
+}
+
+function collectLiveDomAnchors(ink, strokeIds) {
+  const wanted = new Set(Array.isArray(strokeIds) ? strokeIds : []);
+  const result = [];
+  for (const stroke of ink?.strokes || []) {
+    if (!wanted.has(stroke.id)) continue;
+    for (const anchor of stroke.anchors || []) {
+      result.push({ strokeId: stroke.id, baseRevision: stroke.baseRevision, ...anchor });
+      if (result.length >= 24) return result;
+    }
+  }
+  return result;
+}
+
+function formatLiveDomAnchors(anchors) {
+  if (!Array.isArray(anchors) || !anchors.length) return "";
+  const lines = anchors.map(anchor => {
+    const flags = [anchor.centered ? "mark encloses/centers on element" : "stroke touches element", `hits=${anchor.hitCount}`].join(", ");
+    const text = anchor.text ? `; text=${JSON.stringify(anchor.text)}` : "";
+    return `- stroke ${anchor.strokeId}: selector=${JSON.stringify(anchor.selector)}; element=<${anchor.tag || "unknown"}>${text}; ${flags}; normalizedRect=${JSON.stringify(anchor.rect)}`;
+  });
+  return `[DOM annotation targets for revision ${anchors[0].baseRevision || "unknown"}]\nThese targets identify what the ink touches or surrounds. Use the ink image to decide whether the gesture means circle, cross-out, underline, arrow, or handwriting. Prefer these selectors and text snippets over guessing by screen position.\n${lines.join("\n")}\n[/DOM annotation targets]\n\n`;
+}
+
+function buildMessages({ text, imageDataUrl, history = [], intent = "" }) {
   const system = [
     "You are Hermes, a thinking partner inside a Kindle Scribe notebook.",
     "IMPORTANT: In this notebook you are a plain language model with NO tools.",
@@ -279,6 +394,9 @@ function buildMessages({ text, imageDataUrl, history = [] }) {
     "Answer the user directly as Hermes. Never mention 'reference responses', other models,",
     "drafts, or your internal process — the user only sees your final answer.",
     "Be concise and formatted for an e-ink screen. Use simple Markdown, no giant code blocks.",
+    "Use a short-first structure: direct answer first, details second. If handwriting is ambiguous",
+    "around a name, date, dollar amount, or instruction, say the uncertainty and the likely alternatives.",
+    intent && KINDLE_INTENTS.has(intent) ? KINDLE_INTENTS.get(intent) : "",
     "When the user sends a handwritten image, begin your reply with one line:",
     "You wrote: \"<short transcription of the handwriting>\"",
     "then respond on the following lines."
@@ -310,7 +428,7 @@ function chatHeaders(token, sessionKey) {
   };
 }
 
-async function callChat({ endpoint, model, token, text, imageDataUrl, mode, history = [], sessionKey = "kindle-scribe-diary" }) {
+async function callChat({ endpoint, model, token, text, imageDataUrl, mode, history = [], sessionKey = "kindle-scribe-diary", intent = "" }) {
   const response = await fetch(endpoint, {
     method: "POST",
     headers: chatHeaders(token, sessionKey),
@@ -318,7 +436,7 @@ async function callChat({ endpoint, model, token, text, imageDataUrl, mode, hist
       model,
       temperature: 0.35,
       max_tokens: 900,
-      messages: buildMessages({ text, imageDataUrl, history })
+      messages: buildMessages({ text, imageDataUrl, history, intent })
     })
   });
 
@@ -350,7 +468,7 @@ async function cleanHandwritingTranscription(rawText) {
             "You correct OCR from a Kindle Scribe for a CPA firm notebook.",
             "Return only the corrected transcription, with no preface or quotation marks.",
             "Make the smallest defensible corrections to spacing, capitalization, and likely proper names.",
-            "Do not answer the note and do not add facts. If uncertain, preserve the original wording.",
+            "Do not answer the note and do not add facts. If a name, date, dollar amount, or command is uncertain, preserve the original wording and add bracketed alternatives inline, for example [possibly: ...].",
             "Firm vocabulary includes Bearden, Hermes, Onyx, Jameson Bearden, client, engagement, tax, and audit."
           ].join(" ")
         },
@@ -367,7 +485,7 @@ async function cleanHandwritingTranscription(rawText) {
 
 // Streaming variant: parses the gateway's OpenAI SSE and fires onToken(delta)
 // as each fragment arrives. Returns the full accumulated text at the end.
-async function callChatStream({ endpoint, model, token, text, imageDataUrl, history = [], sessionKey = "kindle-scribe-diary", onToken }) {
+async function callChatStream({ endpoint, model, token, text, imageDataUrl, history = [], sessionKey = "kindle-scribe-diary", intent = "", onToken }) {
   const response = await fetch(endpoint, {
     method: "POST",
     headers: chatHeaders(token, sessionKey),
@@ -376,7 +494,7 @@ async function callChatStream({ endpoint, model, token, text, imageDataUrl, hist
       temperature: 0.35,
       max_tokens: 900,
       stream: true,
-      messages: buildMessages({ text, imageDataUrl, history })
+      messages: buildMessages({ text, imageDataUrl, history, intent })
     })
   });
 
@@ -429,13 +547,16 @@ async function callChatStream({ endpoint, model, token, text, imageDataUrl, hist
 // Firm-agent CHANNEL call: hand the note to the Kindle gateway platform adapter,
 // which runs the real agent (MoA + tools) and returns its reply. Non-streaming v1.
 async function callKindleChannel({ text, chatId, rawText = false }) {
-  const channelInstruction = [
-    "[Kindle Scribe channel: The following text was transcribed from handwriting and may contain",
-    "spacing or proper-name errors. Treat likely firm names and people contextually. For any",
-    "question about a person, client, engagement, or the Bearden firm, use the bearden-clients",
-    "tools to look it up before answering. Never guess, fabricate, or expose MoA/reference-model",
-    "discussion. Give only the concise, grounded final answer suitable for an e-ink screen.]"
-  ].join(" ");
+  const environment = [
+    "[Kindle Scribe environment]",
+    "You are Hermes, the same agent and personality used in the user's other channels.",
+    "This message comes from a Kindle Scribe and may have been transcribed from handwriting.",
+    "Reply normally and completely; your response will appear on the Kindle.",
+    "A Live Page is available when rich HTML would be useful or the user asks for it.",
+    "When DOM annotation metadata is present, it identifies the HTML elements marked by the user's ink.",
+    "Use your normal capabilities and tools when helpful; no tool or workflow is required.",
+    "[/Kindle Scribe environment]"
+  ].join("\n");
   let response;
   try {
     response = await fetch(kindleAdapterUrl, {
@@ -444,7 +565,7 @@ async function callKindleChannel({ text, chatId, rawText = false }) {
         "content-type": "application/json",
         ...(kindleIngestToken ? { "x-kindle-token": kindleIngestToken } : {})
       },
-      body: JSON.stringify({ text: rawText ? text : `${channelInstruction}\n\n${text}`, user: kindleUser, chat_id: chatId })
+      body: JSON.stringify({ text: rawText ? text : `${environment}\n\n${text}`, user: kindleUser, chat_id: chatId })
     });
   } catch {
     throw new Error(
@@ -504,6 +625,372 @@ function parseProposalReply(text) {
     }
   }
   return { summary: raw || "Hermes returned an empty proposal", changes: [] };
+}
+
+function requestOriginOk(req) {
+  const origin = String(req.headers.origin || "").trim();
+  if (!origin) return true;
+  try {
+    return new URL(origin).host.toLowerCase() === String(req.headers.host || "").toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
+function fullPageMetadata(fullPage) {
+  const { html: _html, ...metadata } = fullPage;
+  return metadata;
+}
+
+function validLiveRevision(value) {
+  return /^sha256:[a-f0-9]{64}$/.test(String(value || ""));
+}
+
+function validateLiveTransition(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw) || raw.version !== 1) {
+    throw new Error("Stored Live Page transition is invalid");
+  }
+  const fromRevision = String(raw.fromRevision || "");
+  if (!validLiveRevision(fromRevision)) throw new Error("Stored Live Page transition source is invalid");
+  const toPage = livePageStore.validatePrepared(raw.toPage);
+  if (toPage.revision === fromRevision) throw new Error("Stored Live Page transition does not change the page");
+  return {
+    version: 1,
+    fromRevision,
+    toPage,
+    createdAt: typeof raw.createdAt === "string" ? raw.createdAt : new Date().toISOString()
+  };
+}
+
+async function writeLiveTransition(raw) {
+  const transition = validateLiveTransition(raw);
+  await fs.mkdir(dataDir, { recursive: true });
+  liveTransitionSequence += 1;
+  const temp = `${liveTransitionFile}.${process.pid}.${liveTransitionSequence}.tmp`;
+  let handle;
+  try {
+    handle = await fs.open(temp, "wx", 0o600);
+    await handle.writeFile(JSON.stringify(transition, null, 2), "utf8");
+    await handle.sync();
+    await handle.close();
+    handle = null;
+    await fs.rename(temp, liveTransitionFile);
+    livePendingTransition = transition;
+    return transition;
+  } catch (error) {
+    if (handle) await handle.close().catch(() => {});
+    await fs.unlink(temp).catch(() => {});
+    throw error;
+  }
+}
+
+async function loadLiveTransition() {
+  try {
+    livePendingTransition = validateLiveTransition(JSON.parse(await fs.readFile(liveTransitionFile, "utf8")));
+  } catch (error) {
+    if (error && error.code === "ENOENT") livePendingTransition = null;
+    else {
+      const detail = error instanceof SyntaxError ? "stored transition is not valid JSON" : error.message;
+      throw new Error("Cannot load Live Page transition: " + detail);
+    }
+  }
+}
+
+async function clearLiveTransition() {
+  try {
+    await fs.unlink(liveTransitionFile);
+  } catch (error) {
+    if (!error || error.code !== "ENOENT") throw error;
+  }
+  livePendingTransition = null;
+}
+
+async function finishLiveTransition() {
+  if (!livePendingTransition) return livePageStore.metadata();
+  const transition = livePendingTransition;
+  const currentRevision = livePageStore.metadata().revision;
+  const inkRevision = liveInkStore.snapshot().activeRevision;
+  if (currentRevision !== transition.fromRevision && currentRevision !== transition.toPage.revision) {
+    throw new Error("Live Page transition cannot recover from the current page revision");
+  }
+  if (inkRevision && inkRevision !== transition.fromRevision && inkRevision !== transition.toPage.revision) {
+    throw new Error("Live Page transition cannot recover from the current ink revision");
+  }
+  await liveJourneyStore.recordPage({ page: fullPageMetadata(transition.toPage), html: transition.toPage.html });
+  await livePageStore.commitPrepared(transition.toPage);
+  await liveInkStore.rolloverRevision(transition.toPage.revision);
+  await clearLiveTransition();
+  return livePageStore.metadata();
+}
+
+function withLiveState(task) {
+  const run = liveStateQueue.then(async () => {
+    try {
+      await finishLiveTransition();
+    } catch (error) {
+      error.status = 503;
+      throw error;
+    }
+    return task();
+  });
+  liveStateQueue = run.catch(() => {});
+  return run;
+}
+
+function publishLivePage(input, options = {}) {
+  return withLiveState(async () => {
+    const beforeFullPage = livePageStore.fullSnapshot();
+    const beforePage = fullPageMetadata(beforeFullPage);
+    const beforeInk = liveInkStore.snapshot();
+    if (Object.prototype.hasOwnProperty.call(options, "expectedRevision") && options.expectedRevision !== beforePage.revision) {
+      const error = new Error("The Live Page changed; reopen New page before replacing it");
+      error.status = 409;
+      throw error;
+    }
+    let nextFullPage;
+    try {
+      nextFullPage = livePageStore.prepare(input);
+    } catch (error) {
+      error.status = Number(error.status) || 400;
+      throw error;
+    }
+    await liveJourneyStore.recordPage({ page: beforePage, html: beforeFullPage.html });
+    await liveJourneyStore.recordStrokes(beforeInk.strokes, beforePage.revision);
+
+    if (nextFullPage.revision !== beforePage.revision) {
+      const transition = await writeLiveTransition({
+        version: 1,
+        fromRevision: beforePage.revision,
+        toPage: nextFullPage,
+        createdAt: new Date().toISOString()
+      });
+      try {
+        await liveJourneyStore.recordPage({ page: fullPageMetadata(transition.toPage), html: transition.toPage.html });
+      } catch (error) {
+        await clearLiveTransition().catch(() => {});
+        error.status = 503;
+        throw error;
+      }
+      try {
+        await finishLiveTransition();
+      } catch (error) {
+        error.status = 503;
+        throw error;
+      }
+    }
+
+    if (typeof options.sourceHtml === "string") {
+      try {
+        await fs.mkdir(dataDir, { recursive: true });
+        await fs.writeFile(liveSourceFile, options.sourceHtml, "utf8");
+      } catch (error) {
+        logSend({ kind: "live-page-source-write", ok: false, error: error.message });
+      }
+    }
+    return livePageStore.metadata();
+  });
+}
+
+async function handleLivePageInkApi(req, res) {
+  if (!requestOriginOk(req)) {
+    send(res, 403, JSON.stringify({ ok: false, error: "Cross-origin ink access is not allowed" }));
+    return;
+  }
+  if (req.method === "GET") {
+    try {
+      const ink = await withLiveState(() => liveInkStore.snapshot());
+      const etag = '"' + ink.revision + '"';
+      if (req.headers["if-none-match"] === etag) {
+        send(res, 304, "", "application/json; charset=utf-8", { etag });
+        return;
+      }
+      send(res, 200, JSON.stringify({ ok: true, ink }), "application/json; charset=utf-8", { etag });
+    } catch (error) {
+      send(res, 503, JSON.stringify({ ok: false, error: error.message }));
+    }
+    return;
+  }
+  if (req.method === "POST") {
+    try {
+      const body = JSON.parse(await readBody(req, 2_000_000) || "{}");
+      const ink = await withLiveState(async () => {
+        const pageRevision = livePageStore.metadata().revision;
+        const beforeInk = liveInkStore.snapshot();
+        await liveJourneyStore.recordStrokes(beforeInk.strokes, pageRevision);
+        const applied = await liveInkStore.applyBatchDetailed(body);
+        await liveJourneyStore.recordStrokes(applied.observedStrokes, pageRevision);
+        return applied.ink;
+      });
+      logSend({
+        kind: "live-ink-sync",
+        operations: Array.isArray(body.ops) ? body.ops.length : 0,
+        strokes: ink.strokes.length,
+        revision: ink.revision
+      });
+      send(res, 200, JSON.stringify({ ok: true, ink }), "application/json; charset=utf-8", {
+        etag: '"' + ink.revision + '"'
+      });
+    } catch (error) {
+      const status = Number(error.status) || (error.message === "Request too large" ? 413 : (error instanceof SyntaxError ? 400 : 500));
+      if (status >= 500) logSend({ kind: "live-ink-sync", ok: false, error: error.message });
+      send(res, status, JSON.stringify({ ok: false, error: error.message }));
+    }
+    return;
+  }
+  send(res, 405, JSON.stringify({ ok: false, error: "Method not allowed" }), "application/json; charset=utf-8", {
+    allow: "GET, POST"
+  });
+}
+
+async function handleLivePageJourneyApi(req, res) {
+  if (!requestOriginOk(req)) {
+    send(res, 403, JSON.stringify({ ok: false, error: "Cross-origin Journey access is not allowed" }));
+    return;
+  }
+  const url = new URL(req.url, "http://diary.local");
+  if (req.method !== "GET") {
+    send(res, 405, JSON.stringify({ ok: false, error: "Method not allowed" }), "application/json; charset=utf-8", { allow: "GET" });
+    return;
+  }
+  if (url.pathname === "/api/live-page/journey/content") {
+    try {
+      const revision = url.searchParams.get("revision") || "";
+      const html = await withLiveState(() => liveJourneyStore.content(revision));
+      if (html === null) {
+        send(res, 404, "Journey revision not found", "text/plain; charset=utf-8");
+        return;
+      }
+      const theme = url.searchParams.get("theme") === "dark" ? "dark" : "light";
+      const etag = `"${revision}:${theme}"`;
+      if (req.headers["if-none-match"] === etag) {
+        send(res, 304, "", "text/html; charset=utf-8", { etag });
+        return;
+      }
+      res.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+        "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'",
+        "referrer-policy": "no-referrer",
+        "x-content-type-options": "nosniff",
+        etag
+      });
+      res.end(renderLivingDocument(html, theme));
+    } catch (error) {
+      send(res, Number(error.status) || 400, String(error.message || "Journey revision could not be read"), "text/plain; charset=utf-8");
+    }
+    return;
+  }
+
+  try {
+    const journey = await withLiveState(() => liveJourneyStore.snapshot());
+    const etag = `"${journey.revision}"`;
+    if (req.headers["if-none-match"] === etag) {
+      send(res, 304, "", "application/json; charset=utf-8", { etag });
+      return;
+    }
+    send(res, 200, JSON.stringify({ ok: true, ...journey }), "application/json; charset=utf-8", { etag });
+  } catch (error) {
+    send(res, Number(error.status) || 503, JSON.stringify({ ok: false, error: error.message }));
+  }
+}
+
+async function handleLivePageApi(req, res) {
+  const url = new URL(req.url, "http://diary.local");
+  if (url.pathname === "/api/live-page/template") {
+    if (req.method !== "POST") {
+      send(res, 405, JSON.stringify({ ok: false, error: "Method not allowed" }), "application/json; charset=utf-8", { allow: "POST" });
+      return;
+    }
+    try {
+      const body = JSON.parse(await readBody(req, 20_000) || "{}");
+      if (body.confirm !== "replace") {
+        send(res, 400, JSON.stringify({ ok: false, error: "Starting a new page requires explicit confirmation" }), "application/json; charset=utf-8");
+        return;
+      }
+      const input = createLivePageTemplate(body.template);
+      const page = await publishLivePage(input, { expectedRevision: body.baseRevision, sourceHtml: input.html });
+      logSend({ kind: "live-page-template", template: body.template, revision: page.revision });
+      send(res, 201, JSON.stringify({ ok: true, page }), "application/json; charset=utf-8", {
+        etag: `"${page.revision}"`
+      });
+    } catch (error) {
+      send(res, Number(error.status) || 400, JSON.stringify({ ok: false, error: error.message }), "application/json; charset=utf-8");
+    }
+    return;
+  }
+
+  if (url.pathname === "/api/live-page/content") {
+    if (req.method !== "GET") {
+      send(res, 405, "Method not allowed", "text/plain; charset=utf-8", { allow: "GET" });
+      return;
+    }
+    let snapshot;
+    try {
+      snapshot = await withLiveState(() => ({ page: livePageStore.metadata(), html: livePageStore.document() }));
+    } catch (error) {
+      send(res, Number(error.status) || 503, String(error.message || "Live Page is unavailable"), "text/plain; charset=utf-8");
+      return;
+    }
+    const page = snapshot.page;
+    const theme = url.searchParams.get("theme") === "dark" ? "dark" : "light";
+    const etag = `"${page.revision}:${theme}"`;
+    if (req.headers["if-none-match"] === etag) {
+      send(res, 304, "", "text/html; charset=utf-8", { etag });
+      return;
+    }
+    res.writeHead(200, {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+      "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'",
+      "referrer-policy": "no-referrer",
+      "x-content-type-options": "nosniff",
+      etag
+    });
+    res.end(renderLivingDocument(snapshot.html, theme));
+    return;
+  }
+
+  if (req.method === "GET") {
+    let page;
+    try {
+      page = await withLiveState(() => livePageStore.metadata());
+    } catch (error) {
+      const status = Number(error.status) || (error instanceof SyntaxError ? 400 : 503);
+      send(res, status, JSON.stringify({ ok: false, error: error.message }));
+      return;
+    }
+    const etag = `"${page.revision}"`;
+    if (req.headers["if-none-match"] === etag) {
+      send(res, 304, "", "application/json; charset=utf-8", { etag });
+      return;
+    }
+    send(res, 200, JSON.stringify({ ok: true, page }), "application/json; charset=utf-8", { etag });
+    return;
+  }
+
+  if (req.method === "PUT") {
+    if (!livePageWriteOk(req)) {
+      send(res, 403, JSON.stringify({ ok: false, error: "Live Page publishing is local-only" }));
+      return;
+    }
+    try {
+      const body = JSON.parse(await readBody(req, 1_000_000) || "{}");
+      const input = body.page && typeof body.page === "object" ? body.page : body;
+      const page = await publishLivePage(input);
+      logSend({ kind: "live-page-publish", revision: page.revision, title: page.title });
+      send(res, 200, JSON.stringify({ ok: true, page }), "application/json; charset=utf-8", {
+        etag: `"${page.revision}"`
+      });
+    } catch (error) {
+      const status = Number(error.status) || (error instanceof SyntaxError ? 400 : 503);
+      send(res, status, JSON.stringify({ ok: false, error: error.message }));
+    }
+    return;
+  }
+
+  send(res, 405, JSON.stringify({ ok: false, error: "Method not allowed" }), "application/json; charset=utf-8", {
+    allow: "GET, PUT"
+  });
 }
 
 async function handleWorkspaceApi(req, res) {
@@ -603,11 +1090,38 @@ async function serveArtifact(req, res) {
 }
 
 async function handleSend(req, res) {
+  let liveInkClaimId = "";
+  let liveDomAnchors = [];
   try {
     const body = JSON.parse(await readBody(req));
-    const target = body.target || "auto";
+    const target = "hermes";
     const hasInk = typeof body.imageDataUrl === "string" && body.imageDataUrl.startsWith("data:image/");
     const imageBytes = hasInk ? imageBytesFromDataUrl(body.imageDataUrl) : 0;
+    const isLivePageSource = body.source === "live-page";
+    const intent = normalizeKindleIntent(body.intent);
+    const livePageRevision = typeof body.livePageRevision === "string" && /^sha256:[a-f0-9]{64}$/.test(body.livePageRevision)
+      ? body.livePageRevision : "";
+    const liveInkSendId = typeof body.liveInkSendId === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(body.liveInkSendId)
+      ? body.liveInkSendId : "";
+    const liveInkStrokeIds = Array.isArray(body.liveInkStrokeIds) ? body.liveInkStrokeIds : [];
+    if (isLivePageSource && target === "hermes" && !body.stream && liveInkSendId && liveInkStrokeIds.length) {
+      try {
+        const claimed = await withLiveState(async () => {
+          const claim = await liveInkStore.claimSend({ sendId: liveInkSendId, strokeIds: liveInkStrokeIds });
+          return { claim, anchors: claim.status === "claimed" ? collectLiveDomAnchors(liveInkStore.snapshot(), liveInkStrokeIds) : [] };
+        });
+        const claim = claimed.claim;
+        if (claim.status === "complete") {
+          send(res, 200, JSON.stringify(claim.result));
+          return;
+        }
+        liveDomAnchors = claimed.anchors;
+        liveInkClaimId = liveInkSendId;
+      } catch (error) {
+        send(res, Number(error.status) || 409, JSON.stringify({ ok: false, error: error.message }));
+        return;
+      }
+    }
 
     let endpoint = body.endpoint?.trim();
     let model = body.model?.trim();
@@ -655,7 +1169,7 @@ async function handleSend(req, res) {
         : m.text
     }));
 
-    function commitSession(replyText, transcription = "", rawTranscription = "") {
+    function commitSession(replyText, transcription = "", rawTranscription = "", tags = []) {
       if (isNewSession) sessions.unshift(session);
       const now = new Date().toISOString();
       const inkRefPromise = hasInk ? writeInkFile(session.id, body.imageDataUrl) : Promise.resolve("");
@@ -665,6 +1179,8 @@ async function handleSend(req, res) {
           text: body.text || "",
           transcription,
           rawTranscription,
+          tags,
+          intent,
           ink: inkRef,
           time: now
         });
@@ -684,13 +1200,16 @@ async function handleSend(req, res) {
       // The channel takes text; transcribe handwriting via the vision model first.
       let noteText = body.text || "";
       let rawTranscription = "";
+      let cleanedTranscription = "";
       if (hasInk) {
         try {
           const vis = await callChat({
             endpoint: defaultVisionEndpoint,
             model: defaultVisionModel,
             token: "",
-            text: "Transcribe the handwriting exactly. Output only the transcription. Preserve proper names; Bearden is a likely firm surname and must not be split into 'Bear den'.",
+            text: isLivePageSource
+              ? "This ink was written over a Live Page. Transcribe all handwriting exactly, then briefly describe any arrows, circles, underlines, or connectors and their approximate position. Output only the transcription and mark descriptions."
+              : "Transcribe the handwriting exactly. Output only the transcription. Preserve proper names; Bearden is a likely firm surname and must not be split into 'Bear den'.",
             imageDataUrl: body.imageDataUrl,
             mode: "vision"
           });
@@ -698,14 +1217,24 @@ async function handleSend(req, res) {
           const quotedTranscription = visionOutput.match(/^You wrote:\s*["“]([^"”\n]+)["”]/i);
           rawTranscription = (quotedTranscription?.[1] || visionOutput).trim();
           let cleaned = rawTranscription;
-          if (rawTranscription) {
+          if (rawTranscription && !isLivePageSource) {
             try { cleaned = await cleanHandwritingTranscription(rawTranscription); } catch {}
           }
+          cleanedTranscription = cleaned;
           noteText = (noteText ? noteText + "\n\n" : "") + cleaned;
         } catch {
           /* fall through with whatever text we have */
         }
       }
+      const tags = extractNotebookTags(noteText);
+      noteText = stripNotebookTags(noteText);
+      noteText = formatKindleContext({
+        intent,
+        tags,
+        rawTranscription,
+        cleanedTranscription,
+        source: isLivePageSource ? "live-page" : ""
+      }) + formatLiveDomAnchors(liveDomAnchors) + noteText;
 
       const wantStream = !!body.stream;
       if (wantStream) {
@@ -718,9 +1247,17 @@ async function handleSend(req, res) {
       }
 
       let result;
+      const beforeLiveRevision = isLivePageSource ? await withLiveState(() => livePageStore.metadata().revision) : "";
       try {
-        result = await callKindleChannel({ text: noteText, chatId: session.channelThreadId });
+        result = await callKindleChannel({
+          text: noteText,
+          chatId: session.channelThreadId,
+          source: isLivePageSource ? "live-page" : "",
+          baseRevision: livePageRevision,
+          currentRevision: beforeLiveRevision
+        });
       } catch (error) {
+        if (liveInkClaimId) await withLiveState(() => liveInkStore.releaseSend(liveInkClaimId)).catch(() => {});
         logSend({ kind: "error", target: "hermes", channel: true, error: error.message });
         if (wantStream) {
           res.write(RS + JSON.stringify({ error: error.message }));
@@ -730,26 +1267,46 @@ async function handleSend(req, res) {
         }
         return;
       }
+      const afterLivePage = isLivePageSource ? await withLiveState(() => livePageStore.metadata()) : null;
+      const afterLiveRevision = afterLivePage ? afterLivePage.revision : "";
+      const pageChanged = !!beforeLiveRevision && !!afterLiveRevision && beforeLiveRevision !== afterLiveRevision;
 
       if (!result.text || !result.text.trim()) {
+        if (liveInkClaimId) await withLiveState(() => liveInkStore.releaseSend(liveInkClaimId)).catch(() => {});
         const emsg = "The firm agent returned an empty reply. Tap Send to try again.";
         if (wantStream) { res.write(RS + JSON.stringify({ error: emsg })); res.end(); }
         else send(res, 502, JSON.stringify({ ok: false, error: emsg }));
         return;
       }
 
-      await commitSession(result.text, noteText, rawTranscription);
+      if (!session.title) {
+        const wrote = result.text.match(/^You wrote:\s*"([^"\n]{1,60})/i);
+        session.title = (body.text || (wrote && wrote[1]) || "Handwritten entry").slice(0, 60);
+      }
+      const hermesResponse = {
+        ok: true,
+        text: result.text,
+        sessionId: session.id,
+        hermesThreadId: session.channelThreadId,
+        title: session.title,
+        tags,
+        intent,
+        pageChanged,
+        page: pageChanged ? afterLivePage : undefined
+      };
+      if (liveInkClaimId) await withLiveState(() => liveInkStore.completeSend(liveInkClaimId, hermesResponse));
+      await commitSession(result.text, noteText, rawTranscription, tags);
       logSend({
         kind: "send", target: "hermes", channel: true, sessionId: session.id,
         textChars: noteText.length, imageBytes, responseChars: result.text.length,
-        durationMs: Date.now() - startedCh
+        durationMs: Date.now() - startedCh, intent, tags, pageChanged
       });
       if (wantStream) {
         res.write(result.text);
         res.write(RS + JSON.stringify({ title: session.title }));
         res.end();
       } else {
-        send(res, 200, JSON.stringify({ ok: true, text: result.text, sessionId: session.id, hermesThreadId: session.channelThreadId, title: session.title }));
+        send(res, 200, JSON.stringify(hermesResponse));
       }
       return;
     }
@@ -776,6 +1333,7 @@ async function handleSend(req, res) {
           imageDataUrl: hasInk ? body.imageDataUrl : "",
           history,
           sessionKey: "kindle-scribe-diary-" + session.id,
+          intent,
           onToken: (t) => res.write(t)
         });
       } catch (error) {
@@ -794,7 +1352,8 @@ async function handleSend(req, res) {
         return;
       }
 
-      await commitSession(result.text);
+      const tags = extractNotebookTags(body.text || "");
+      await commitSession(result.text, "", "", tags);
       logSend({
         kind: "send",
         streaming: true,
@@ -805,7 +1364,9 @@ async function handleSend(req, res) {
         textChars: (body.text || "").length,
         imageBytes,
         responseChars: result.text.length,
-        durationMs: Date.now() - startedStream
+        durationMs: Date.now() - startedStream,
+        intent,
+        tags
       });
       // Trailer (after a record-separator) carries the final title.
       res.write("" + JSON.stringify({ title: session.title }));
@@ -823,7 +1384,8 @@ async function handleSend(req, res) {
       imageDataUrl: hasInk ? body.imageDataUrl : "",
       mode,
       history,
-      sessionKey: "kindle-scribe-diary-" + session.id
+      sessionKey: "kindle-scribe-diary-" + session.id,
+      intent
     });
 
     // Don't commit or return an empty reply — surface it as retryable.
@@ -840,9 +1402,12 @@ async function handleSend(req, res) {
     const inkRef = hasInk ? await writeInkFile(session.id, body.imageDataUrl) : "";
 
     const now = new Date().toISOString();
+    const tags = extractNotebookTags(body.text || "");
     session.messages.push({
       role: "user",
       text: body.text || "",
+      tags,
+      intent,
       ink: inkRef,
       time: now
     });
@@ -865,15 +1430,20 @@ async function handleSend(req, res) {
       textChars: (body.text || "").length,
       imageBytes,
       responseChars: result.text.length,
-      durationMs: Date.now() - startedAt
+      durationMs: Date.now() - startedAt,
+      intent,
+      tags
     });
     send(res, 200, JSON.stringify({
       ok: true,
       ...result,
       sessionId: session.id,
-      title: session.title
+      title: session.title,
+      tags,
+      intent
     }));
   } catch (error) {
+    if (liveInkClaimId) await withLiveState(() => liveInkStore.releaseSend(liveInkClaimId)).catch(() => {});
     logSend({ kind: "error", error: error.message });
     send(res, 500, JSON.stringify({ ok: false, error: error.message }));
   }
@@ -935,14 +1505,15 @@ async function serveImage(req, res) {
 async function serveStatic(req, res) {
   const url = new URL(req.url, "http://diary.local");
   let rel = decodeURIComponent(url.pathname);
-  if (isRemoteHost(req) && /^\/remote\/[^/]+\/?$/.test(rel)) {
+  if (isRemoteHost(req) && /^\/remote\/[^/]+(?:\/live\/?)?$/.test(rel)) {
     if (!remoteKeyOk(req)) {
       send(res, 401, "Unauthorized", "text/plain; charset=utf-8");
       return;
     }
-    rel = "/index.html";
+    rel = /\/live\/?$/.test(rel) ? "/live.html" : "/index.html";
   }
   if (rel === "/") rel = "/index.html";
+  if (rel === "/live" || rel === "/live/") rel = "/live.html";
   const file = path.normalize(path.join(publicDir, rel));
   if (!file.startsWith(publicDir)) {
     send(res, 403, "Forbidden", "text/plain; charset=utf-8");
@@ -982,7 +1553,8 @@ const server = http.createServer(async (req, res) => {
   const requestPath = new URL(req.url, "http://diary.local").pathname;
   const protectedRemotePath = requestPath.startsWith("/api/") || requestPath.startsWith("/img/");
   const localProtectedApi = requestPath.startsWith("/api/") && requestPath !== "/api/config";
-  if (((isRemoteHost(req) && protectedRemotePath) || (!isRemoteHost(req) && localProtectedApi)) && !authOk(req)) {
+  const localLivePublish = requestPath === "/api/live-page" && req.method === "PUT" && livePageWriteOk(req);
+  if (((isRemoteHost(req) && protectedRemotePath) || (!isRemoteHost(req) && localProtectedApi)) && !authOk(req) && !localLivePublish) {
     send(res, 401, JSON.stringify({ ok: false, error: "unauthorized — use the permanent remote diary bookmark" }));
     return;
   }
@@ -998,6 +1570,18 @@ const server = http.createServer(async (req, res) => {
       hasHermesToken: Boolean(hermesToken),
       authRequired: Boolean(authToken)
     }));
+    return;
+  }
+  if (requestPath === "/api/live-page/ink") {
+    await handleLivePageInkApi(req, res);
+    return;
+  }
+  if (requestPath === "/api/live-page/journey" || requestPath === "/api/live-page/journey/content") {
+    await handleLivePageJourneyApi(req, res);
+    return;
+  }
+  if (requestPath === "/api/live-page" || requestPath === "/api/live-page/content" || requestPath === "/api/live-page/template") {
+    await handleLivePageApi(req, res);
     return;
   }
   if (req.method === "POST" && req.url === "/api/warm") {
@@ -1090,8 +1674,24 @@ hermesToken = await loadHermesToken();
 await loadSessions();
 await migrateInlineImages();
 await workspaceStore.init();
+await livePageStore.init();
+await liveInkStore.init();
+await liveJourneyStore.init();
+await loadLiveTransition();
+await finishLiveTransition();
+await liveJourneyStore.recordPage({ page: livePageStore.metadata(), html: livePageStore.document() });
+await liveJourneyStore.recordStrokes(liveInkStore.snapshot().strokes, livePageStore.metadata().revision);
+{
+  const startupRollover = await liveInkStore.rolloverRevision(livePageStore.metadata().revision);
+  await liveJourneyStore.recordStrokes(startupRollover.clearedStrokes, livePageStore.metadata().revision);
+}
+await liveJourneyStore.verifyContents();
+liveWriteToken = await loadLiveWriteToken();
 
 server.listen(port, host, () => {
-  console.log(`Hermes Agents Guide to the Galaxy listening on http://${host}:${port}`);
+  const address = server.address();
+  const listeningPort = address && typeof address === "object" ? address.port : port;
+  console.log(`Hermes Agents Guide to the Galaxy listening on http://${host}:${listeningPort}`);
   console.log(`Hermes endpoint: ${hermesEndpoint} (${hermesToken ? "token loaded" : "no token"})`);
+  console.log("Live Page publisher ready");
 });

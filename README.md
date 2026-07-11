@@ -39,6 +39,7 @@ bookmark it. Config is via env vars (all optional):
 | `KINDLE_USER` | `kindle` | Stable Hermes user identity for the device |
 | `DIARY_AUTH_TOKEN` | *(unset)* | If set, `/api/*` requires this secret. Open the diary once with `?k=<token>` — it's saved and sent on every call. Unset = open (LAN default). |
 | `DIARY_REMOTE_KEY` | *(unset)* | Permanent key required for API and handwriting access through a public `*.ts.net` Funnel hostname. Bookmark `/remote/<key>`; LAN access remains unchanged. |
+| `DIARY_LIVE_WRITE_TOKEN` | *(generated locally)* | Optional override for the Live Page publisher secret. With no override, the bridge creates `data/live-page-write.token`. |
 
 ## Features
 
@@ -69,6 +70,9 @@ bookmark it. Config is via env vars (all optional):
   ask the real Hermes Kindle channel for a structured change proposal. Workspace
   state, artifact revisions, annotations, proposals, and audit events persist
   locally under `data/workspaces/`.
+- **Hermes Live Page** — tap **Live** to open one living HTML document. Hermes
+  can reshape the same page as the conversation develops: a table, visual map,
+  client brief, working canvas, or any other self-contained HTML/CSS layout.
 
 ## Endpoints
 
@@ -89,6 +93,38 @@ bookmark it. Config is via env vars (all optional):
 | `POST /api/workspaces/:id/proposals` | Create a revision-bound proposal |
 | `POST /api/workspaces/:id/proposals/:proposalId/analyze` | Ask Hermes for structured proposed changes |
 | `GET /api/artifacts/:id/content` | Render artifact content with restrictive security headers |
+| `GET /api/live-page` | Read the current revisioned Live Page; supports `If-None-Match` / `304` |
+| `GET /api/live-page/content` | Render the current sanitized HTML document inside the sandboxed Live Page |
+| `PUT /api/live-page` | Publish from loopback with the private `x-diary-live-write` token |
+
+## Hermes Live Page
+
+The Live Page lives at `/live` and is linked from the notebook header. It is
+not a status tracker or a fixed set of templates. It is one mutable HTML file
+that Hermes reads, edits, and republishes as the work changes. On a remote
+Kindle bookmark the app preserves the secret path as `/remote/<key>/live`, and
+**Notebook** returns to `/remote/<key>`.
+
+The Kindle channel tells Hermes to maintain `data/live-page-source.html` and
+publish it before replying whenever the user asks to build or change the Live
+Page. The source may use self-contained HTML and CSS. The publisher removes
+scripts, forms, event handlers, embedded frames, and external URLs; the result
+then renders inside a scriptless iframe with a restrictive content security
+policy. The Kindle receives the evolving document but never the publisher
+credential.
+
+Publish a living HTML file manually after the bridge is running:
+
+```powershell
+node scripts/publish-live-page.mjs examples/live-page.example.html
+```
+
+The server creates a private publisher token under ignored `data/` on first
+start. Publishing requires that token, a loopback socket, and a non-Funnel
+host. A Kindle, LAN browser, or public Funnel request can read the authenticated
+page but cannot replace it. The shell checks every 10 seconds and loads a new
+HTML revision only when Hermes has actually changed the document. Identical
+publishes keep the same SHA-256 revision and do not repaint the e-ink page.
 
 ## Always-on setup (Windows)
 

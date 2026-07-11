@@ -1,0 +1,298 @@
+:root {
+  color-scheme: light;
+  --paper: #fbfaf4;
+  --ink: #111;
+  --line: #aaa395;
+  --soft: #eee9dc;
+  --muted: #625b4e;
+}
+
+html.dark {
+  color-scheme: dark;
+  --paper: #15140f;
+  --ink: #e9e7e0;
+  --line: #625d52;
+  --soft: #23211a;
+  --muted: #aaa395;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+button { font: inherit; }
+
+.liveShell {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+}
+
+.liveBar {
+  position: absolute;
+  z-index: 8;
+  top: 0;
+  top: env(safe-area-inset-top, 0);
+  right: 0;
+  padding: 8px;
+  pointer-events: none;
+}
+
+.visuallyHidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.annotationDock {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: flex-start;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.annotationToggle,
+.annotationTools button,
+.liveReply button {
+  min-height: 44px;
+  padding: 5px 9px;
+  border: 2px solid var(--ink);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 700 13px/1.1 Arial, sans-serif;
+}
+
+.annotationToggle {
+  width: 46px;
+  min-width: 46px;
+  height: 46px;
+  padding: 0;
+  border-radius: 6px;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, .22);
+  font-size: 24px;
+  line-height: 1;
+}
+
+body.toolsOpen .annotationToggle,
+.annotationToggle:focus {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.annotationTools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  max-width: calc(100vw - 68px);
+  padding: 5px;
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+  background: var(--soft);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, .22);
+  gap: 5px;
+}
+
+.toolActions,
+.intentActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.toolActions button {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  padding: 0;
+}
+
+.toolActions svg {
+  display: block;
+  width: 22px;
+  height: 22px;
+  margin: 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.intentActions {
+  padding-top: 5px;
+  border-top: 1px solid var(--line);
+}
+
+.annotationTools .intentBtn {
+  min-width: 54px;
+  min-height: 36px;
+  padding: 4px 7px;
+}
+
+.annotationTools button.active {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+button:focus {
+  outline: 3px solid var(--line);
+  outline-offset: 2px;
+}
+
+button:disabled { opacity: .42; }
+.livingSurface {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--paper);
+  touch-action: none;
+  -ms-touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+#liveFrame,
+#liveInkDisplay,
+#liveInk {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+#liveFrame {
+  z-index: 1;
+  background: var(--paper);
+  pointer-events: none;
+}
+
+#liveInkDisplay {
+  z-index: 2;
+  pointer-events: none;
+  shape-rendering: geometricPrecision;
+}
+
+#liveInk {
+  z-index: 3;
+  opacity: 0;
+  cursor: crosshair;
+  touch-action: none;
+  -ms-touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+body.viewMode .livingSurface {
+  touch-action: auto;
+  -ms-touch-action: auto;
+}
+
+body.viewMode #liveFrame { pointer-events: auto; }
+body.viewMode #liveInk { pointer-events: none; }
+
+.liveMessage {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 22px;
+  line-height: 1.4;
+  text-align: center;
+  pointer-events: none;
+}
+
+.liveMessage.hidden { display: none; }
+
+.liveReply {
+  position: fixed;
+  z-index: 14;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 34vh;
+  overflow: auto;
+  padding: 10px 12px 12px;
+  border-top: 2px solid var(--ink);
+  background: var(--soft);
+  color: var(--ink);
+}
+
+.liveReply > strong {
+  display: block;
+  margin: 4px 80px 6px 0;
+  font-size: 18px;
+}
+
+.liveReply button {
+  float: right;
+  min-width: 70px;
+}
+
+#liveReplyText {
+  clear: both;
+  white-space: pre-wrap;
+  font: 15px/1.4 Arial, sans-serif;
+}
+@media (max-width: 470px) {
+  .liveBar { padding: 5px; }
+  .annotationDock { gap: 4px; }
+  .annotationToggle {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+  }
+  .annotationTools {
+    max-width: calc(100vw - 57px);
+    padding: 4px;
+    gap: 4px;
+  }
+  .toolActions,
+  .intentActions {
+    gap: 3px;
+  }
+  .toolActions button {
+    width: 42px;
+    min-width: 42px;
+    height: 42px;
+  }
+  .toolActions svg {
+    width: 20px;
+    height: 20px;
+  }
+  .annotationTools .intentBtn {
+    min-width: 46px;
+    padding-left: 5px;
+    padding-right: 5px;
+    font-size: 12px;
+  }
+}
