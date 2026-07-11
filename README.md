@@ -6,6 +6,15 @@ Hermes answers, and the reply forms on the page or in a side pane. Runs as a
 tiny local web app because a stock Scribe can't sideload native apps — the
 browser is the only channel, so the app is built to feel like one.
 
+[![CI](https://github.com/lEWFkRAD/hermes-agents-guide-to-the-galaxy/actions/workflows/ci.yml/badge.svg)](https://github.com/lEWFkRAD/hermes-agents-guide-to-the-galaxy/actions/workflows/ci.yml)
+
+Community contributions, including reviewed AI-assisted contributions, are
+welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).
+This project is available under the [MIT License](LICENSE).
+
+Run `npm run lint` and `npm test` before contributing. Security-sensitive bugs
+must be reported privately as described in [SECURITY.md](SECURITY.md).
+
 ## How it works
 
 ```
@@ -16,7 +25,55 @@ The Kindle never sees the Hermes API or adapter tokens. The bridge transcribes
 the handwriting locally, submits text to Hermes's authenticated localhost-only
 Kindle platform adapter, and receives the completed tool-assisted agent reply.
 
+## Supported setup
+
+The currently supported baseline is intentionally narrow:
+
+- **Node.js:** 20 or 22, matching CI. The diary has no npm runtime dependencies.
+- **Host:** Windows 11 is the real-device reference environment. The Node server
+  and tests also run on Linux; the included Task Scheduler, `.cmd`, PowerShell,
+  and VBScript helpers are Windows-only and optional.
+- **Hermes Agent:** use `lEWFkRAD/hermes-agent` branch `feat/kindle-platform`
+  until [NousResearch/hermes-agent#61687](https://github.com/NousResearch/hermes-agent/pull/61687)
+  merges; afterward, use the upstream release containing that change. Configure
+  the Gateway and enable the installed `kindle-scribe` plugin.
+- **Device:** a stock Kindle Scribe using its built-in browser on the same LAN,
+  or through the explicitly configured Tailscale Funnel path. Desktop browsers
+  are useful for smoke tests but do not prove e-ink interaction quality.
+
+From a fresh clone, validate before configuring a device:
+
+```powershell
+npm run lint
+npm test
+npm start
+Invoke-RestMethod http://127.0.0.1:8791/api/config
+```
+
+The default notebook, local history, artifact workspaces, and Kindle plugin are
+present on `main`. Outlook/PST support under `integrations/` is optional and
+requires its own local credentials. The expanded Live Page annotations and
+Journey work in [PR #1](https://github.com/lEWFkRAD/hermes-agents-guide-to-the-galaxy/pull/1)
+is experimental and is not part of `main`. Remote access is also optional; read
+the [deployment threat model](SECURITY.md#deployment-threat-model) first.
+
 ## Run it
+
+First install and enable the optional Hermes platform plugin. It lives in
+Hermes's persistent user-plugin directory—not inside the Hermes source tree—so
+normal Hermes updates do not delete it:
+
+```powershell
+hermes plugins install lEWFkRAD/hermes-agents-guide-to-the-galaxy/kindle-plugin --enable
+hermes gateway restart
+Invoke-RestMethod http://127.0.0.1:8793/health
+```
+
+The installer prompts for `KINDLE_INGEST_TOKEN` and saves it in Hermes's local
+environment file. Set `KINDLE_ALLOWED_USERS` to the stable identity used by the
+bridge (for example, `jeff`). Keep `KINDLE_ALLOW_ALL_USERS` unset.
+
+Then start the diary bridge:
 
 ```
 npm start          # node server.mjs — listens on 0.0.0.0:8791
@@ -37,6 +94,10 @@ bookmark it. Config is via env vars (all optional):
 | `DIARY_OCR_CLEANUP_MODEL` | `qwen3.6-27b-nvfp4` | OCR cleanup model name |
 | `KINDLE_ADAPTER_URL` | `http://127.0.0.1:8793/ingest` | Hermes Kindle platform ingest endpoint |
 | `KINDLE_USER` | `kindle` | Stable Hermes user identity for the device |
+| `DIARY_CHAT_TIMEOUT_MS` | `120000` | Timeout for ordinary model and OCR requests |
+| `DIARY_STREAM_TIMEOUT_MS` | `300000` | Timeout for streaming model responses |
+| `DIARY_ADAPTER_TIMEOUT_MS` | `300000` | Timeout for Kindle adapter requests |
+| `DIARY_WARM_TIMEOUT_MS` | `15000` | Timeout for background warm-up requests |
 | `DIARY_AUTH_TOKEN` | *(unset)* | If set, `/api/*` requires this secret. Open the diary once with `?k=<token>` — it's saved and sent on every call. Unset = open (LAN default). |
 | `DIARY_REMOTE_KEY` | *(unset)* | Permanent key required for API and handwriting access through a public `*.ts.net` Funnel hostname. Bookmark `/remote/<key>`; LAN access remains unchanged. |
 | `DIARY_LIVE_WRITE_TOKEN` | *(generated locally)* | Optional override for the Live Page publisher secret. With no override, the bridge creates `data/live-page-write.token`. |
@@ -139,6 +200,9 @@ publishes keep the same SHA-256 revision and do not repaint the e-ink page.
   with your `DOMAIN\user` (e.g. from `whoami`).
 
 ## Away from the LAN with Tailscale Funnel
+
+Read the [deployment threat model](SECURITY.md#deployment-threat-model) before
+enabling public access. Funnel uses a bearer bookmark, not per-user identity.
 
 A stock Kindle Scribe cannot install Tailscale. Tailscale Funnel gives it a
 public HTTPS URL while `DIARY_REMOTE_KEY` provides a permanent, bookmark-carried
