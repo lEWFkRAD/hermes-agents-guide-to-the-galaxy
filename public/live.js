@@ -540,7 +540,6 @@
       if (xhr.status === 304) {
         inkSyncReady = true;
         inkSyncBackoff = 5000;
-        rematerializeInk();
         flushInkOperations();
         scheduleInkPoll(5000);
         return;
@@ -936,7 +935,7 @@
     };
     strokes.push(currentStroke);
     drawing = true;
-    redrawInk();
+    currentDisplayEl = drawStroke(currentStroke);
     updateInkButtons();
     return stopEvent(event);
   }
@@ -984,15 +983,12 @@
     drawing = false;
     currentStroke = null;
     currentDisplayEl = null;
-    redrawInk();
     saveInk();
     queueInkOperation("add", { stroke: completed });
     if (pendingInkSnapshot) {
       var snapshot = pendingInkSnapshot;
       pendingInkSnapshot = null;
       applyInkSnapshot(snapshot);
-    } else {
-      rematerializeInk();
     }
   }
 

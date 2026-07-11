@@ -27,7 +27,7 @@ test("live ink uses the same smooth curve for display and Hermes export", async 
 test("live shell cache-busts the current renderer and Journey assets", async () => {
   const html = await fs.readFile(path.join(repoRoot, "public", "live.html"), "utf8");
   assert.match(html, /live\.css\?v=15/);
-  assert.match(html, /live\.js\?v=29/);
+  assert.match(html, /live\.js\?v=30/);
   assert.match(html, /class="labeledTool"/);
   assert.match(html, /id="hermesToggleBtn"/);
   assert.match(html, /id="moreToggleBtn"/);
@@ -133,6 +133,20 @@ test("live drawing keeps coalesced samples, final points, and bounded relative t
   assert.match(source, /if \(drawing && currentStroke\) commitCurrentStroke\(\)/);
   assert.match(source, /add\(document, "pointerup", endInk\)/);
   assert.doesNotMatch(source, /add\(element, "pointerleave", endInk\)/);
+});
+
+test("ordinary drawing does not rebuild every older stroke", async () => {
+  const source = await fs.readFile(path.join(repoRoot, "public", "live.js"), "utf8");
+  const start = source.slice(source.indexOf("function startInk"), source.indexOf("function appendInkPoint"));
+  const commit = source.slice(source.indexOf("function commitCurrentStroke"), source.indexOf("function endInk"));
+  const unchangedPoll = source.slice(source.indexOf("if (xhr.status === 304)"), source.indexOf("if (xhr.status >= 200", source.indexOf("if (xhr.status === 304)")));
+
+  const ordinaryStart = start.slice(start.indexOf("var startedAt"));
+  assert.match(ordinaryStart, /currentDisplayEl = drawStroke\(currentStroke\)/);
+  assert.doesNotMatch(ordinaryStart, /redrawInk\(\)/);
+  assert.doesNotMatch(commit, /redrawInk\(\)/);
+  assert.doesNotMatch(commit, /rematerializeInk\(\)/);
+  assert.doesNotMatch(unchangedPoll, /rematerializeInk\(\)/);
 });
 
 test("blank-page hint stays dismissed after writing or a Hermes response", async () => {
