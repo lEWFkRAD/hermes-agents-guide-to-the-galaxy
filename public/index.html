@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Hermes Agents Guide to the Galaxy</title>
-    <link rel="stylesheet" href="/styles.css?v=27">
+    <link rel="stylesheet" href="/styles.css?v=30">
   </head>
   <body>
     <main class="diary">
@@ -15,6 +15,7 @@
             <p id="status">Ready</p>
           </div>
           <div class="actions">
+            <button id="livePageBtn" type="button">HTML</button>
             <button id="historyBtn" type="button">History</button>
             <button id="newBtn" type="button">New</button>
             <button id="sendBtn" type="button">Send</button>
@@ -22,7 +23,7 @@
         </header>
         <details id="workspaceLab" class="workspaceLab">
           <summary>Artifact workspace</summary>
-          <p class="workspaceIntro">Annotate an image or HTML page, then ask Hermes for a structured change proposal.</p>
+          <p class="workspaceIntro">Open something, or start with a simple shape and draw on it.</p>
           <div class="workspaceControls">
             <label>
               Mode
@@ -39,6 +40,27 @@
             </label>
             <button id="newWorkspaceBtn" type="button">New workspace</button>
           </div>
+          <section id="brainstormIdeas" class="brainstormIdeas" hidden aria-label="Brainstorm starting pages">
+            <p>Start with</p>
+            <div class="brainstormIdeaGrid">
+              <button type="button" data-brainstorm-template="blank">
+                <span class="ideaPreview ideaBlank" aria-hidden="true"></span>
+                <strong>Blank</strong>
+              </button>
+              <button type="button" data-brainstorm-template="map">
+                <span class="ideaPreview ideaMap" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+                <strong>Map</strong>
+              </button>
+              <button type="button" data-brainstorm-template="path">
+                <span class="ideaPreview ideaPath" aria-hidden="true"><i></i><i></i><i></i></span>
+                <strong>Path</strong>
+              </button>
+              <button type="button" data-brainstorm-template="grid">
+                <span class="ideaPreview ideaGrid" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+                <strong>Grid</strong>
+              </button>
+            </div>
+          </section>
           <p id="workspaceStatus" class="workspaceStatus">Choose an image or HTML file to begin.</p>
 
           <section id="artifactWorkbench" class="artifactWorkbench" hidden>
@@ -66,7 +88,7 @@
               </label>
               <label class="annotationTextLabel">
                 What does this ink mean?
-                <input id="annotationText" type="text" placeholder="Move this section left, fix this number, turn this into a task…">
+                <input id="annotationText" type="text" placeholder="Move this, connect these, or change the shape…">
               </label>
               <button id="saveAnnotationBtn" type="button">Save annotation</button>
             </div>
@@ -98,13 +120,14 @@
         <div class="split">
           <div class="writeCol">
             <div class="canvasWrap">
+              <iframe id="notebookLiveFrame" class="notebookLiveFrame" title="Hermes HTML" sandbox="allow-same-origin" referrerpolicy="no-referrer"></iframe>
               <canvas id="ink" aria-label="Ink canvas"></canvas>
               <div id="pageText" class="pageText" aria-live="polite"></div>
               <div class="pageCtl">
                 <button id="pgUp" type="button">&#9650;</button>
                 <button id="pgDn" type="button">&#9660;</button>
               </div>
-              <details id="toolPalette" class="toolPalette">
+              <details id="toolPalette" class="toolPalette" open>
                 <summary aria-label="Open drawing tools" title="Drawing tools">&#9998;</summary>
                 <div class="toolPanel">
                 <div class="toolActions" aria-label="Drawing actions">
@@ -154,10 +177,7 @@
           <label>
             Target
             <select id="target">
-              <option value="auto">Plain assistant</option>
-              <option value="hermes" selected>Hermes firm agent (tools enabled)</option>
-              <option value="local">Local models</option>
-              <option value="custom">Custom OpenAI-compatible endpoint</option>
+              <option value="hermes" selected>Hermes agent (tools enabled)</option>
             </select>
           </label>
           <label>
@@ -175,7 +195,7 @@
         </details>
       </section>
     </main>
-    <script src="/app.js?v=30"></script>
-    <script src="/workspace.js?v=3"></script>
+    <script src="/app.js?v=37"></script>
+    <script src="/workspace.js?v=5"></script>
   </body>
 </html>

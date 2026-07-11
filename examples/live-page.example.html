@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>The Living Page</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body { margin: 0; min-height: 100%; }
+      body {
+        background: #fbfaf4;
+        color: #111;
+        font-family: Georgia, "Times New Roman", serif;
+      }
+      .page {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 7vw 6vw 10vw;
+      }
+      .eyebrow {
+        margin: 0 0 16px;
+        font: 700 13px/1.2 Arial, sans-serif;
+        letter-spacing: 0.13em;
+        text-transform: uppercase;
+      }
+      h1 {
+        max-width: 11ch;
+        margin: 0;
+        font-size: clamp(48px, 11vw, 110px);
+        line-height: 0.9;
+        letter-spacing: -0.045em;
+      }
+      .lede {
+        max-width: 31em;
+        margin: 30px 0 0;
+        font-size: clamp(21px, 3.5vw, 30px);
+        line-height: 1.4;
+      }
+      .rule {
+        height: 5px;
+        margin: 48px 0;
+        background: #111;
+      }
+      .flow {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr auto 1fr;
+        align-items: center;
+        gap: 12px;
+      }
+      .step {
+        min-height: 150px;
+        padding: 20px;
+        border: 3px solid #111;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+      .step b { font: 700 13px/1.2 Arial, sans-serif; text-transform: uppercase; }
+      .step span { font-size: 24px; line-height: 1.15; }
+      .arrow { font: 700 32px/1 Arial, sans-serif; }
+      .possibilities {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+      .possibility {
+        padding: 20px;
+        border: 2px solid #111;
+      }
+      .possibility h2 { margin: 0 0 8px; font-size: 25px; }
+      .possibility p { margin: 0; font-size: 17px; line-height: 1.45; }
+      .closing {
+        margin: 50px 0 0;
+        padding-top: 20px;
+        border-top: 1px solid #777;
+        font-size: 19px;
+        font-style: italic;
+      }
+      @media (max-width: 700px) {
+        .flow { grid-template-columns: 1fr; }
+        .arrow { text-align: center; transform: rotate(90deg); }
+        .possibilities { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <p class="eyebrow">Hermes × Kindle</p>
+      <h1>The page is alive.</h1>
+      <p class="lede">This is not a dashboard watching the conversation. It is the thing we are making together—and Hermes can reshape it whenever the idea changes.</p>
+
+      <div class="rule"></div>
+
+      <section class="flow" aria-label="How the living page evolves">
+        <div class="step"><b>01 · Talk</b><span>You describe the thought.</span></div>
+        <div class="arrow">→</div>
+        <div class="step"><b>02 · Shape</b><span>Hermes turns it into HTML.</span></div>
+        <div class="arrow">→</div>
+        <div class="step"><b>03 · Evolve</b><span>The same page becomes the next version.</span></div>
+      </section>
+
+      <div class="rule"></div>
+
+      <section class="possibilities">
+        <article class="possibility"><h2>A working table</h2><p>Not a template button—a real table designed around the data we are discussing.</p></article>
+        <article class="possibility"><h2>A visual argument</h2><p>Hierarchy, comparison, flow, emphasis, and whitespace arranged for the idea.</p></article>
+        <article class="possibility"><h2>A visual notebook</h2><p>A page that can grow as thoughts, questions, and connections appear.</p></article>
+        <article class="possibility"><h2>A blank invention</h2><p>Anything HTML and CSS can express, constrained only by what reads well on the Scribe.</p></article>
+      </section>
+
+      <p class="closing">Ask Hermes to change this page. The next version should feel like the same thought moving forward.</p>
+    </main>
+  </body>
+</html>

@@ -1,5 +1,6 @@
 # Personal diary content — entries, handwriting images, archives. Never commit.
 data/
+backups/
 
 # Runtime logs
 *.log

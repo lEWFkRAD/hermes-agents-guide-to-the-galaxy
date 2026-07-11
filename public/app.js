@@ -7,7 +7,7 @@
   (function () {
     var m = (window.location.search || "").match(/[?&]k=([^&#]+)/);
     var rm = (window.location.search || "").match(/[?&]rk=([^&#]+)/);
-    var rpm = (window.location.pathname || "").match(/^\/remote\/([^/]+)\/?$/);
+    var rpm = (window.location.pathname || "").match(/^\/remote\/([^/]+)(?:\/live)?\/?$/);
     if (rm) remoteKey = decodeURIComponent(rm[1]);
     else if (rpm) remoteKey = decodeURIComponent(rpm[1]);
     try {
@@ -67,6 +67,9 @@
   var clearBtn = document.getElementById("clearBtn");
   var undoBtn = document.getElementById("undoBtn");
   var newBtn = document.getElementById("newBtn");
+  var livePageBtn = document.getElementById("livePageBtn");
+  var notebookLiveFrame = document.getElementById("notebookLiveFrame");
+  var notebookLiveRevision = "";
   var historyBtn = document.getElementById("historyBtn");
   var historyClose = document.getElementById("historyClose");
   var historyPanel = document.getElementById("historyPanel");
@@ -238,6 +241,10 @@
   var REVEAL_WORDS_PER_TICK = 8;
   var REVEAL_TICK_MS = 130;
   var REQUEST_TIMEOUT_MS = 200000;
+  // The Kindle adapter itself may wait up to four minutes for a tool-heavy
+  // Hermes turn.  Keep the browser alive long enough to receive that adapter
+  // timeout or, preferably, the completed answer.
+  var HERMES_REQUEST_TIMEOUT_MS = 300000;
   var revealGen = 0;
   var thinkGen = 0;
   var RSCHAR = String.fromCharCode(30); // record separator between reply and trailer
@@ -1561,7 +1568,7 @@
       sessionLabel.innerHTML = "Entry: " + escapeHtml(sessionTitle || "Untitled");
       replyText = json.text;
       proceed();
-    }, REQUEST_TIMEOUT_MS);
+    }, payload.target === "hermes" ? HERMES_REQUEST_TIMEOUT_MS : REQUEST_TIMEOUT_MS);
   }
 
   // Live streaming: read the reply incrementally as Hermes writes it, using
@@ -1603,6 +1610,7 @@
       renderPending = true;
       window.setTimeout(function () {
         renderPending = false;
+        if (finished) return;
         paint(false);
       }, STREAM_RENDER_MS);
     }
@@ -1663,7 +1671,7 @@
     xhr.open("POST", "/api/send", true);
     xhr.setRequestHeader("content-type", "application/json");
       setAuth(xhr);
-    xhr.timeout = REQUEST_TIMEOUT_MS;
+    xhr.timeout = payload.target === "hermes" ? HERMES_REQUEST_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
     xhr.onreadystatechange = function () {
       if (gen !== revealGen) return;
       if (xhr.readyState >= 3 && xhr.responseText) {
@@ -1728,6 +1736,28 @@
   add(undoBtn, "click", undoStroke);
   add(sendBtn, "click", send);
   add(newBtn, "click", newEntry);
+  function refreshNotebookLivePage() {
+    if (!notebookLiveFrame) return;
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET", "/api/live-page", true);
+    xhr.setRequestHeader("accept", "application/json");
+    setAuth(xhr);
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4 || xhr.status < 200 || xhr.status >= 300) return;
+      try {
+        var data = JSON.parse(xhr.responseText);
+        if (!data.page || !data.page.revision || data.page.revision === notebookLiveRevision) return;
+        if (notebookLiveRevision && strokes.length) clearInk();
+        notebookLiveRevision = data.page.revision;
+        notebookLiveFrame.src = appendRemoteKey("/api/live-page/content?theme=" + (darkMode ? "dark" : "light") + "&v=" + encodeURIComponent(notebookLiveRevision));
+        hint.style.display = "none";
+      } catch (error) {}
+    };
+    xhr.send(null);
+  }
+  add(livePageBtn, "click", refreshNotebookLivePage);
+  refreshNotebookLivePage();
+  window.setInterval(refreshNotebookLivePage, 5000);
   add(historyBtn, "click", toggleHistory);
   add(historyClose, "click", hideHistory);
   add(historyList, "click", historyClick);
@@ -1765,6 +1795,7 @@
   // The diary is a Hermes client first. Remember an explicit alternate target,
   // but default new devices to the secured, tool-capable firm-agent channel.
   var savedTarget = storageGet("diaryTarget");
+  if (savedTarget !== "hermes") savedTarget = "hermes";
   targetEl.value = savedTarget || "hermes";
   add(targetEl, "change", function () {
     storageSet("diaryTarget", targetEl.value);

@@ -40,6 +40,22 @@ textarea {
   font: inherit;
 }
 
+.notebookLiveFrame {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--paper);
+  pointer-events: none;
+}
+.canvasWrap > #ink { position: relative; z-index: 2; background: transparent; }
+.canvasWrap > .pageText,
+.canvasWrap > .pageCtl,
+.canvasWrap > .toolPalette,
+.canvasWrap > #emptyHint { z-index: 3; }
+
 .diary {
   min-height: 100vh;
   padding: 8px;
@@ -205,6 +221,125 @@ h1 .sub {
   padding: 5px;
 }
 
+.brainstormIdeas {
+  margin: 10px 0 12px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  background: var(--soft);
+}
+
+.workspaceLab.brainstormMode .artifactPicker {
+  display: none;
+}
+
+.workspaceLab.brainstormMode .workspaceControls {
+  grid-template-columns: 160px auto;
+}
+
+.brainstormIdeas > p {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font: 700 13px/1.2 system-ui, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.brainstormIdeaGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.brainstormIdeaGrid button {
+  min-width: 0;
+  min-height: 112px;
+  padding: 8px;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.brainstormIdeaGrid button:active {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.brainstormIdeaGrid strong {
+  display: block;
+  margin-top: 7px;
+  font-size: 15px;
+}
+
+.ideaPreview {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 66px;
+  border: 1px solid currentColor;
+  opacity: .82;
+}
+
+.ideaMap i,
+.ideaPath i,
+.ideaGrid i {
+  position: absolute;
+  display: block;
+  border: 2px solid currentColor;
+  background: var(--paper);
+}
+
+@media (max-width: 620px) {
+  .brainstormIdeaGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.ideaMap::before,
+.ideaMap::after {
+  content: "";
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  top: 50%;
+  border-top: 1px solid currentColor;
+}
+
+.ideaMap::before { transform: rotate(24deg); }
+.ideaMap::after { transform: rotate(-24deg); }
+.ideaMap i { width: 12px; height: 12px; border-radius: 50%; }
+.ideaMap i:nth-child(1) { width: 20px; height: 20px; left: calc(50% - 10px); top: calc(50% - 10px); }
+.ideaMap i:nth-child(2) { left: 12%; top: 14%; }
+.ideaMap i:nth-child(3) { right: 12%; top: 14%; }
+.ideaMap i:nth-child(4) { left: 12%; bottom: 14%; }
+.ideaMap i:nth-child(5) { right: 12%; bottom: 14%; }
+
+.ideaPath::before {
+  content: "";
+  position: absolute;
+  left: 16%;
+  right: 16%;
+  top: 50%;
+  border-top: 2px solid currentColor;
+}
+
+.ideaPath i { width: 21%; height: 24px; top: calc(50% - 12px); }
+.ideaPath i:nth-child(1) { left: 5%; }
+.ideaPath i:nth-child(2) { left: 39.5%; }
+.ideaPath i:nth-child(3) { right: 5%; }
+
+.ideaGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  padding: 6px;
+}
+
+.ideaGrid i {
+  position: static;
+  width: auto;
+  height: auto;
+}
+
 .artifactWorkbench {
   margin-top: 10px;
   padding-top: 10px;
@@ -238,9 +373,13 @@ h1 .sub {
   position: relative;
   height: 480px;
   border: 2px solid var(--ink);
-  background: #fff;
+  background: var(--paper);
   overflow: hidden;
   touch-action: none;
+  -ms-touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .artifactSurface iframe,
@@ -254,19 +393,20 @@ h1 .sub {
 
 .artifactSurface iframe {
   border: 0;
-  background: #fff;
+  background: var(--paper);
   pointer-events: none;
 }
 
 .artifactSurface img {
   object-fit: contain;
-  background: #fff;
+  background: var(--paper);
   pointer-events: none;
 }
 
 .artifactSurface canvas {
   z-index: 2;
   cursor: crosshair;
+  pointer-events: none;
 }
 
 .annotationControls {

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>HTML · Hermes</title>
+    <script>
+      try {
+        if (/(?:^|[?&])theme=dark(?:&|$)/.test(location.search) || localStorage.getItem("diaryDark") === "1") {
+          document.documentElement.className = "dark";
+        }
+      } catch (error) {}
+    </script>
+    <link rel="stylesheet" href="/live.css?v=15">
+    <link rel="stylesheet" href="/live-journey.css?v=3">
+  </head>
+  <body class="livePage viewMode toolsCollapsed">
+    <main class="liveShell">
+      <header class="liveBar">
+        <div class="liveIdentity"><strong>Hermes</strong><span id="liveState" aria-live="polite">Opening…</span></div>
+        <div class="liveActions">
+          <button id="annotationToggleBtn" class="menuPill" type="button" aria-expanded="false" aria-controls="annotationTools">Pen</button>
+          <button id="hermesToggleBtn" class="menuPill" type="button" aria-expanded="false" aria-controls="hermesTools">Hermes</button>
+          <button id="liveSendBtn" type="button" disabled>Send</button>
+          <button id="moreToggleBtn" class="menuPill" type="button" aria-expanded="false" aria-controls="moreTools" aria-label="More options">&#8943;</button>
+        </div>
+        <div id="annotationDock" class="annotationDock">
+          <div id="annotationTools" class="annotationTools" role="toolbar" aria-label="HTML drawing tools" hidden>
+            <div class="toolActions" aria-label="Drawing actions">
+              <button id="drawModeBtn" class="labeledTool" type="button" aria-pressed="true" aria-label="Pen" title="Pen">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 20 4.5-1 10-10a2.1 2.1 0 0 0 0-3l-.5-.5a2.1 2.1 0 0 0-3 0l-10 10L4 20Z"/><path d="m13 7 4 4"/></svg>
+              </button>
+              <button id="undoInkBtn" class="labeledTool" type="button" aria-label="Undo" title="Undo" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7 4 12l5 5"/><path d="M5 12h8a6 6 0 0 1 6 6"/></svg>
+              </button>
+              <button id="eraserInkBtn" class="labeledTool" type="button" aria-label="Toggle eraser" title="Eraser">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 21-4-4L14.5 5.5a2.1 2.1 0 0 1 3 0l1 1a2.1 2.1 0 0 1 0 3L7 21Z"/><path d="m11 9 4 4M7 21h12"/></svg>
+              </button>
+              <button id="copyInkBtn" class="selectionAction labeledTool" type="button" aria-label="Copy ink" title="Copy" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="12" rx="1"/><path d="M16 8V4H5a1 1 0 0 0-1 1v11h4"/></svg>
+              </button>
+              <button id="pasteInkBtn" class="selectionAction labeledTool" type="button" aria-label="Duplicate ink" title="Duplicate" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5h6M9 3h6v4H9z"/><path d="M7 5H5v16h14V5h-2"/></svg>
+              </button>
+              <button id="lassoInkBtn" class="labeledTool" type="button" aria-label="Lasso selection" title="Select">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="11" cy="10" rx="8" ry="6" stroke-dasharray="3 2"/><path d="M17 14c2 1 3 2 3 4 0 2-2 3-4 3"/></svg>
+              </button>
+              <button id="rotateInkBtn" class="selectionAction labeledTool" type="button" aria-label="Rotate selection" title="Rotate" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2 6"/><path d="M20 5v6h-6"/></svg>
+              </button>
+              <button id="deleteSelectionBtn" class="selectionAction labeledTool" type="button" aria-label="Delete selection" title="Delete" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 3h6l1 4H8l1-4Z"/><path d="m7 7 1 14h8l1-14"/></svg>
+              </button>
+              <button id="moveSelectionBtn" class="selectionAction" type="button" aria-label="Move selection" title="Move selection" disabled>Move</button>
+              <button id="askSelectionBtn" class="selectionAction" type="button" aria-label="Ask Hermes about selection" title="Ask Hermes" disabled>Ask</button>
+            </div>
+          </div>
+          <div id="hermesTools" class="pillMenu" role="toolbar" aria-label="Hermes tools" hidden>
+            <button id="backBtn" class="cornerIcon" type="button" aria-label="History" title="History">&#9719;</button>
+            <button id="liveNewBtn" class="cornerIcon primaryIcon" type="button" aria-label="New conversation" title="New conversation">+</button>
+          </div>
+          <div id="moreTools" class="pillMenu" role="toolbar" aria-label="More options" hidden>
+            <button id="liveThemeBtn" type="button">Dark mode</button>
+            <button id="clearInkBtn" type="button" disabled>Clear ink</button>
+          </div>
+        </div>
+      </header>
+
+
+      <section id="livingSurface" class="livingSurface">
+        <iframe id="liveFrame" title="Hermes HTML" sandbox="allow-same-origin" referrerpolicy="no-referrer"></iframe>
+        <svg id="liveInkDisplay" aria-hidden="true" focusable="false"></svg>
+        <canvas id="liveInk" aria-label="Annotate Hermes HTML"></canvas>
+        <div id="liveMessage" class="liveMessage">Opening the page…</div>
+        <div id="emptyHint" class="emptyHint">Write anywhere. Tap Send when ready. Hermes can build the page beneath your ink.</div>
+      </section>
+      <section id="liveReply" class="liveReply" hidden aria-live="polite">
+        <button id="closeReplyBtn" type="button">Close</button>
+        <strong>Hermes</strong>
+        <div id="liveReplyText"></div>
+      </section>
+      <section id="liveHistory" class="liveHistory" hidden aria-label="Hermes history">
+        <header><strong>History</strong><button id="liveHistoryCloseBtn" type="button">Close</button></header>
+        <div id="liveHistoryList"><p>Loading…</p></div>
+      </section>
+    </main>
+    <script src="/live.js?v=31"></script>
+    <script src="/live-journey.js?v=4"></script>
+  </body>
+</html>
