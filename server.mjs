@@ -1527,9 +1527,9 @@ async function serveStatic(req, res) {
       send(res, 401, "Unauthorized", "text/plain; charset=utf-8");
       return;
     }
-    rel = "/live.html";
+    rel = /\/live\/?$/.test(rel) ? "/live.html" : "/index.html";
   }
-  if (rel === "/" || rel === "/index.html") rel = "/live.html";
+  if (rel === "/" || rel === "/index.html") rel = "/index.html";
   if (rel === "/live" || rel === "/live/") rel = "/live.html";
   const file = path.normalize(path.join(publicDir, rel));
   if (!file.startsWith(publicDir)) {

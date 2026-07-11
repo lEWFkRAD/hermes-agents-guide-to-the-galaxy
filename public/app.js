@@ -68,6 +68,8 @@
   var undoBtn = document.getElementById("undoBtn");
   var newBtn = document.getElementById("newBtn");
   var livePageBtn = document.getElementById("livePageBtn");
+  var notebookLiveFrame = document.getElementById("notebookLiveFrame");
+  var notebookLiveRevision = "";
   var historyBtn = document.getElementById("historyBtn");
   var historyClose = document.getElementById("historyClose");
   var historyPanel = document.getElementById("historyPanel");
@@ -1734,11 +1736,28 @@
   add(undoBtn, "click", undoStroke);
   add(sendBtn, "click", send);
   add(newBtn, "click", newEntry);
-  add(livePageBtn, "click", function () {
-    var themeQuery = darkMode ? "?theme=dark" : "";
-    if (hermesThreadId) storageSet("diaryHermesThreadId", hermesThreadId);
-    window.location.href = (remoteKey ? "/remote/" + encodeURIComponent(remoteKey) + "/live" : "/live") + themeQuery;
-  });
+  function refreshNotebookLivePage() {
+    if (!notebookLiveFrame) return;
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET", "/api/live-page", true);
+    xhr.setRequestHeader("accept", "application/json");
+    setAuth(xhr);
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4 || xhr.status < 200 || xhr.status >= 300) return;
+      try {
+        var data = JSON.parse(xhr.responseText);
+        if (!data.page || !data.page.revision || data.page.revision === notebookLiveRevision) return;
+        if (notebookLiveRevision && strokes.length) clearInk();
+        notebookLiveRevision = data.page.revision;
+        notebookLiveFrame.src = "/api/live-page/content?theme=" + (darkMode ? "dark" : "light") + "&v=" + encodeURIComponent(notebookLiveRevision);
+        hint.style.display = "none";
+      } catch (error) {}
+    };
+    xhr.send(null);
+  }
+  add(livePageBtn, "click", refreshNotebookLivePage);
+  refreshNotebookLivePage();
+  window.setInterval(refreshNotebookLivePage, 5000);
   add(historyBtn, "click", toggleHistory);
   add(historyClose, "click", hideHistory);
   add(historyList, "click", historyClick);
