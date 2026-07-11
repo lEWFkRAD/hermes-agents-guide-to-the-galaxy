@@ -118,6 +118,7 @@
   var moveMode=false,movingSelection=false,moveStart=null,moveOriginals=[];
   var movePreviewFrame=null,movePreviewPoint=null;
   var streamPaintTimer=null,lastStreamPaint="";
+  var newPageBusy=false;
   var INK_STORAGE_KEY = "livePageInkV1";
   var INK_CLIENT_KEY = "livePageInkClientV2";
   var INK_MIGRATION_KEY = "livePageInkMigratedV2";
@@ -1200,15 +1201,19 @@
   }
 
   function newPage() {
-    if (sendBusy || drawing) return;
-    setText(stateEl, "Starting new page");
-    requestJson("POST", "/api/channel/reset", { chatId: hermesThreadId || newHermesThreadId() }, function () {
-      requestJson("POST", "/api/live-page/template", { template: "blank", baseRevision: revision, confirm: "replace" }, function (error) {
-        if (error) { setText(stateEl, "Could not start new page"); return; }
-        sessionId = ""; hermesThreadId = newHermesThreadId();
-        removeStorage("diarySessionId"); removeStorage("diaryHermesThreadId");
-        clearInk(); hideReply(); loadMetadata(true);
-      });
+    if (sendBusy || drawing || newPageBusy) return;
+    newPageBusy=true;
+    var previousThreadId=hermesThreadId;
+    sessionId="";hermesThreadId=newHermesThreadId();
+    removeStorage("diarySessionId");storageSet("diaryHermesThreadId",hermesThreadId);
+    clearInk();hideReply();setToolsOpen(false);closeMenus("");setText(stateEl,"Opening blank page");
+    // Retire the old Hermes lane independently. A slow /new must never hold
+    // the visible page transition hostage.
+    if(previousThreadId)requestJson("POST","/api/channel/reset",{chatId:previousThreadId},function(){});
+    requestJson("POST", "/api/live-page/template", { template: "blank", baseRevision: revision, confirm: "replace" }, function (error) {
+      newPageBusy=false;
+      if (error) { setText(stateEl, "Could not open blank page"); return; }
+      loadMetadata(true);setText(stateEl,"New page");
     });
   }
   function toggleTheme() { darkMode=!darkMode; try { if(darkMode) window.localStorage.setItem("diaryDark","1"); else window.localStorage.removeItem("diaryDark"); } catch(error){} document.documentElement.className=darkMode?"dark":""; setText(liveThemeBtn,darkMode?"Light":"Dark"); if(revision) frameEl.src="/api/live-page/content"+accessQuery(); }

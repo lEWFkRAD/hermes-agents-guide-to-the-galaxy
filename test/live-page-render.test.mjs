@@ -27,7 +27,7 @@ test("live ink uses the same smooth curve for display and Hermes export", async 
 test("live shell cache-busts the current renderer and Journey assets", async () => {
   const html = await fs.readFile(path.join(repoRoot, "public", "live.html"), "utf8");
   assert.match(html, /live\.css\?v=13/);
-  assert.match(html, /live\.js\?v=23/);
+  assert.match(html, /live\.js\?v=24/);
   assert.match(html, /class="labeledTool"/);
   assert.match(html, /id="hermesToggleBtn"/);
   assert.match(html, /id="moreToggleBtn"/);
@@ -73,6 +73,7 @@ test("annotation tools default to a compact Kindle-friendly reading mode", async
   assert.match(source, /requestClear/);
   assert.match(source, /requestFrame\(renderMovePreview\)/);
   assert.match(source, /streamPaintTimer/);
+  assert.match(source, /slow \/new must never hold/);
 });
 
 test("main Kindle notebook defaults to the tool-enabled Hermes channel", async () => {
