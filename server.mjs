@@ -243,15 +243,20 @@ function send(res, status, body, type = "application/json; charset=utf-8") {
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let data = "";
+    let rejected = false;
     req.setEncoding("utf8");
     req.on("data", chunk => {
+      if (rejected) return;
       data += chunk;
       if (data.length > 12_000_000) {
-        reject(new Error("Request too large"));
-        req.destroy();
+        rejected = true;
+        data = "";
+        const error = new Error("Request too large");
+        error.statusCode = 413;
+        reject(error);
       }
     });
-    req.on("end", () => resolve(data));
+    req.on("end", () => { if (!rejected) resolve(data); });
     req.on("error", reject);
   });
 }
@@ -877,7 +882,7 @@ async function handleSend(req, res) {
     }));
   } catch (error) {
     logSend({ kind: "error", error: error.message });
-    send(res, 500, JSON.stringify({ ok: false, error: error.message }));
+    send(res, error.statusCode || 500, JSON.stringify({ ok: false, error: error.message }));
   }
 }
 
@@ -983,8 +988,8 @@ const server = http.createServer(async (req, res) => {
   // requires the permanent remote bookmark key. LAN behavior remains unchanged.
   const requestPath = new URL(req.url, "http://diary.local").pathname;
   const protectedRemotePath = requestPath.startsWith("/api/") || requestPath.startsWith("/img/");
-  const localProtectedApi = requestPath.startsWith("/api/") && requestPath !== "/api/config";
-  if (((isRemoteHost(req) && protectedRemotePath) || (!isRemoteHost(req) && localProtectedApi)) && !authOk(req)) {
+  const localProtectedPath = (requestPath.startsWith("/api/") && requestPath !== "/api/config") || requestPath.startsWith("/img/");
+  if (((isRemoteHost(req) && protectedRemotePath) || (!isRemoteHost(req) && localProtectedPath)) && !authOk(req)) {
     send(res, 401, JSON.stringify({ ok: false, error: "unauthorized — use the permanent remote diary bookmark" }));
     return;
   }
