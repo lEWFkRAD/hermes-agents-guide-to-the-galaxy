@@ -46,10 +46,20 @@ button { font: inherit; }
   z-index: 8;
   top: 0;
   top: env(safe-area-inset-top, 0);
+  left: 0;
   right: 0;
   padding: 8px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
   pointer-events: none;
 }
+.liveIdentity { display: flex; flex-direction: column; padding: 5px 7px; background: var(--paper); border: 1px solid var(--line); pointer-events: auto; }
+.liveIdentity span { color: var(--muted); font: 12px/1.2 Arial, sans-serif; }
+.liveActions { display: flex; align-items: flex-start; gap: 5px; pointer-events: auto; }
+.liveActions > button,
+.liveHistory button { min-height: 44px; padding: 5px 9px; border: 2px solid var(--ink); border-radius: 4px; background: var(--paper); color: var(--ink); font: 700 13px/1.1 Arial, sans-serif; }
 
 .visuallyHidden {
   position: absolute !important;
@@ -93,6 +103,10 @@ button { font: inherit; }
   font-size: 24px;
   line-height: 1;
 }
+.liveHistory { position: absolute; inset: 0; z-index: 20; overflow: auto; padding: 12px; background: var(--paper); color: var(--ink); }
+.liveHistory header { position: sticky; top: 0; display: flex; justify-content: space-between; align-items: center; padding: 8px 0; background: var(--paper); border-bottom: 2px solid var(--ink); }
+.historyItem { display: block; width: 100%; margin: 8px 0; padding: 12px; text-align: left; border: 1px solid var(--line); background: var(--soft); color: var(--ink); }
+.historyMessage { padding: 10px 0; border-bottom: 1px solid var(--line); white-space: pre-wrap; }
 
 body.toolsOpen .annotationToggle,
 .annotationToggle:focus {

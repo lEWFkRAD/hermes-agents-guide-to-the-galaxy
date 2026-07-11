@@ -11,14 +11,17 @@
         }
       } catch (error) {}
     </script>
-    <link rel="stylesheet" href="/live.css?v=9">
+    <link rel="stylesheet" href="/live.css?v=10">
     <link rel="stylesheet" href="/live-journey.css?v=2">
   </head>
   <body class="livePage viewMode toolsCollapsed">
     <main class="liveShell">
       <header class="liveBar">
-        <h1 class="visuallyHidden">Hermes HTML</h1>
-        <span id="liveState" class="visuallyHidden" aria-live="polite">Opening…</span>
+        <div class="liveIdentity"><strong>Hermes</strong><span id="liveState" aria-live="polite">Opening…</span></div>
+        <div class="liveActions">
+          <button id="liveHistoryBtn" type="button">History</button>
+          <button id="liveNewBtn" type="button">New</button>
+          <button id="liveSendBtn" type="button" disabled>Send</button>
         <div id="annotationDock" class="annotationDock">
           <button id="annotationToggleBtn" class="annotationToggle" type="button" aria-expanded="false" aria-controls="annotationTools" aria-label="Open annotation tools" title="Annotate">
             <span aria-hidden="true">&#9998;</span>
@@ -37,7 +40,7 @@
               <button id="clearInkBtn" type="button" aria-label="Clear page" title="Clear page" disabled>
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 3h6l1 4H8l1-4Z"/><path d="m7 7 1 14h8l1-14M10 11v6M14 11v6"/></svg>
               </button>
-              <button id="backBtn" type="button" aria-label="Notebook" title="Notebook">
+              <button id="backBtn" type="button" aria-label="History" title="History">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h11a2 2 0 0 1 2 2v16H8a3 3 0 0 1-3-3V4a1 1 0 0 1 1-1Z"/><path d="M8 21V5M11 8h5M11 12h5"/></svg>
               </button>
             </div>
@@ -48,7 +51,7 @@
               <button class="intentBtn" type="button" data-intent="workpaper" title="Workpaper note">W/P</button>
             </div>
           </div>
-        </div>
+        </div></div>
       </header>
 
 
@@ -63,8 +66,12 @@
         <strong>Hermes</strong>
         <div id="liveReplyText"></div>
       </section>
+      <section id="liveHistory" class="liveHistory" hidden aria-label="Hermes history">
+        <header><strong>History</strong><button id="liveHistoryCloseBtn" type="button">Close</button></header>
+        <div id="liveHistoryList"><p>Loading…</p></div>
+      </section>
     </main>
-    <script src="/live.js?v=15"></script>
+    <script src="/live.js?v=16"></script>
     <script src="/live-journey.js?v=3"></script>
   </body>
 </html>

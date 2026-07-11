@@ -76,6 +76,12 @@
   var intentBtns = document.getElementsByClassName ? document.getElementsByClassName("intentBtn") : [];
   var clearInkBtn = document.getElementById("clearInkBtn");
   var backBtn = document.getElementById("backBtn");
+  var liveHistoryBtn = document.getElementById("liveHistoryBtn");
+  var liveNewBtn = document.getElementById("liveNewBtn");
+  var liveSendBtn = document.getElementById("liveSendBtn");
+  var liveHistoryEl = document.getElementById("liveHistory");
+  var liveHistoryCloseBtn = document.getElementById("liveHistoryCloseBtn");
+  var liveHistoryList = document.getElementById("liveHistoryList");
   var annotationToggleBtn = document.getElementById("annotationToggleBtn");
   var annotationToolsEl = document.getElementById("annotationTools");
   if (!surfaceEl || !frameEl || !canvasEl || !displayEl) return;
@@ -302,6 +308,7 @@
     clearInkBtn.disabled = sendBusy || (!strokes.length && !pendingInkSend);
     drawModeBtn.disabled = sendBusy || !!pendingInkSend;
     sendInkBtn.disabled = sendBusy || !inkSyncReady || hasPendingAddOperations() || (!pendingInkSend && !unsentStrokes().length);
+    if (liveSendBtn) liveSendBtn.disabled = sendInkBtn.disabled;
   }
 
   function saveInk() {
@@ -1058,7 +1065,52 @@
   function setSendBusy(busy) {
     sendBusy = !!busy;
     setText(sendInkBtn, sendBusy ? "Working..." : "Send");
+    setText(liveSendBtn, sendBusy ? "Working..." : "Send");
     updateInkButtons();
+  }
+
+  function requestJson(method, url, body, callback) {
+    var xhr = new XMLHttpRequest();
+    xhr.open(method, url, true);
+    xhr.setRequestHeader("accept", "application/json");
+    if (body !== null) xhr.setRequestHeader("content-type", "application/json");
+    setAuth(xhr);
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) return;
+      var json = null;
+      try { json = JSON.parse(xhr.responseText || "{}"); } catch (error) {}
+      callback(xhr.status >= 200 && xhr.status < 300 ? null : new Error((json && json.error) || "Request failed"), json);
+    };
+    xhr.send(body === null ? null : JSON.stringify(body));
+  }
+
+  function escapeHtml(value) {
+    return String(value == null ? "" : value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
+  }
+
+  function openHistory() {
+    liveHistoryEl.hidden = false;
+    liveHistoryList.innerHTML = "<p>Loading&hellip;</p>";
+    requestJson("GET", "/api/sessions", null, function (error, json) {
+      if (error) { liveHistoryList.innerHTML = "<p>History unavailable.</p>"; return; }
+      var items = json.sessions || [], html = "";
+      if (!items.length) html = "<p>No conversations yet.</p>";
+      for (var i = 0; i < items.length; i += 1) html += '<button class="historyItem" data-session="' + escapeHtml(items[i].id) + '"><strong>' + escapeHtml(items[i].title || "Untitled") + '</strong><br>' + escapeHtml(items[i].preview || "") + '</button>';
+      liveHistoryList.innerHTML = html;
+    });
+  }
+
+  function newPage() {
+    if (sendBusy || drawing) return;
+    setText(stateEl, "Starting new page");
+    requestJson("POST", "/api/channel/reset", { chatId: hermesThreadId || newHermesThreadId() }, function () {
+      requestJson("POST", "/api/live-page/template", { template: "blank", baseRevision: revision, confirm: "replace" }, function (error) {
+        if (error) { setText(stateEl, "Could not start new page"); return; }
+        sessionId = ""; hermesThreadId = newHermesThreadId();
+        removeStorage("diarySessionId"); removeStorage("diaryHermesThreadId");
+        clearInk(); hideReply(); loadMetadata(true);
+      });
+    });
   }
 
   function startProgress(intent) {
@@ -1281,6 +1333,22 @@
   add(annotationToggleBtn, "click", function () { setToolsOpen(!toolsOpen); });
   add(drawModeBtn, "click", function () { setDrawMode(!drawMode); });
   add(sendInkBtn, "click", function () { sendInkToHermes(""); });
+  add(liveSendBtn, "click", function () { sendInkToHermes(""); });
+  add(liveHistoryBtn, "click", openHistory);
+  add(liveHistoryCloseBtn, "click", function () { liveHistoryEl.hidden = true; });
+  add(liveNewBtn, "click", newPage);
+  add(liveHistoryList, "click", function (event) {
+    var target = event.target || event.srcElement;
+    if (target && target.getAttribute && target.getAttribute("data-history-back")) { openHistory(); return; }
+    while (target && !target.getAttribute("data-session")) target = target.parentNode;
+    if (!target) return;
+    requestJson("GET", "/api/sessions/" + encodeURIComponent(target.getAttribute("data-session")), null, function (error, json) {
+      if (error || !json.session) return;
+      var messages = json.session.messages || [], html = '<button class="historyItem" data-history-back="1">Back</button>';
+      for (var i = 0; i < messages.length; i += 1) html += '<div class="historyMessage"><strong>' + escapeHtml(messages[i].role || "") + '</strong><br>' + escapeHtml(messages[i].text || messages[i].content || "") + '</div>';
+      liveHistoryList.innerHTML = html;
+    });
+  });
   for (var intentIndex = 0; intentIndex < intentBtns.length; intentIndex += 1) {
     add(intentBtns[intentIndex], "click", function (event) {
       var button = event.currentTarget || event.srcElement;
@@ -1306,7 +1374,7 @@
     if (typeof document.hidden === "undefined" || !document.hidden) refreshInkFromServer(true);
   });
   add(backBtn, "click", function () {
-    window.location.href = remoteKey ? "/remote/" + encodeURIComponent(remoteKey) : "/";
+    openHistory();
   });
 
   loadInk();
