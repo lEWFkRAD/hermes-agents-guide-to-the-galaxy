@@ -1336,6 +1336,8 @@
     if (!retrying) keepPendingInkSend({ id: liveInkSendId, strokeIds: pendingIds });
     if (!hermesThreadId) hermesThreadId = newHermesThreadId();
     var done = false;
+    var useStream = !retrying;
+    var streamHeader = false, streamStart = 0, streamText = "", streamTrailer = null;
     setSendBusy(true);
     hideReply();
     startProgress(requestedIntent);
@@ -1355,6 +1357,11 @@
     setAuth(xhr);
     xhr.timeout = 300000;
     xhr.onreadystatechange = function () {
+      if (useStream && xhr.readyState >= 3 && xhr.responseText) {
+        var raw = xhr.responseText;
+        if (!streamHeader) { var nl = raw.indexOf("\n"); if (nl >= 0) { try { rememberChannel(JSON.parse(raw.slice(0,nl))); } catch(error){} streamHeader=true; streamStart=nl+1; } }
+        if (streamHeader) { var part=raw.slice(streamStart), rs=part.indexOf(String.fromCharCode(30)); if(rs>=0){streamText=part.slice(0,rs);try{streamTrailer=JSON.parse(part.slice(rs+1));}catch(error){}}else streamText=part; if(streamText) showReply(streamText); }
+      }
       if (xhr.readyState !== 4 || done) return;
       if (xhr.status < 200 || xhr.status >= 300) {
         var errorText = "";
@@ -1363,7 +1370,7 @@
         return;
       }
       try {
-        var result = JSON.parse(xhr.responseText);
+        var result = useStream ? { ok:true, text:streamText, pageChanged:!!(streamTrailer&&streamTrailer.pageChanged), page:streamTrailer&&streamTrailer.page } : JSON.parse(xhr.responseText);
         if (!result.ok) throw new Error(result.error || "Hermes did not complete the annotation");
         done = true;
         for (var i = 0; i < strokes.length; i += 1) {
@@ -1395,7 +1402,8 @@
       source: "live-page",
       livePageRevision: revision,
       liveInkSendId: liveInkSendId,
-      liveInkStrokeIds: pendingIds
+      liveInkStrokeIds: pendingIds,
+      stream: useStream
     }));
   }
 
