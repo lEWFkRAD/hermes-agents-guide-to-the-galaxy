@@ -133,6 +133,9 @@ bookmark it. Config is via env vars (all optional):
 
 ## Away from the LAN with Tailscale Funnel
 
+Read the [deployment threat model](SECURITY.md#deployment-threat-model) before
+enabling public access. Funnel uses a bearer bookmark, not per-user identity.
+
 A stock Kindle Scribe cannot install Tailscale. Tailscale Funnel gives it a
 public HTTPS URL while `DIARY_REMOTE_KEY` provides a permanent, bookmark-carried
 device secret. This does not depend on Kindle cookies or local storage.
