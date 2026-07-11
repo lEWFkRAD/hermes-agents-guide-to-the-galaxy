@@ -189,6 +189,10 @@
 .journeyTransport button:disabled,
 #journeyProgress:disabled { opacity: .42; }
 
+/* Match the notebook's flat e-ink visual language. */
+.journeyOverlay,.journeyPanel,.journeyToolbar,.journeyTimeline,.journeyCard { box-shadow:none !important; border-radius:0 !important; background:var(--paper); }
+.journeyOverlay button { -webkit-appearance:none; appearance:none; box-shadow:none !important; text-shadow:none; border-radius:0 !important; }
+
 @media (max-width: 470px) {
   .journeyBar { min-height: 52px; padding: 4px 5px; }
   .journeyHeading strong { font-size: 17px; }

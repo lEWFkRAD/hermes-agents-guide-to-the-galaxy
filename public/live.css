@@ -192,6 +192,11 @@ button:disabled { opacity: .42; }
 .toolActions .labeledTool { width: 108px; display:flex; align-items:center; justify-content:flex-start; gap:7px; padding:0 8px; }
 .toolActions .labeledTool svg { width:20px; height:20px; margin:0; flex:0 0 auto; }
 .toolActions .labeledTool::after { content:attr(title); font:700 12px/1 Arial,sans-serif; }
+/* Flat e-ink controls: contrast communicates state, never depth. */
+button { -webkit-appearance:none; appearance:none; box-shadow:none !important; text-shadow:none; border-radius:0 !important; }
+.liveIdentity,.annotationTools,.pillMenu,.liveReply,.liveHistory,.historyItem { box-shadow:none !important; border-radius:0 !important; background:var(--paper); }
+.annotationToggle { box-shadow:none !important; border-radius:0 !important; }
+.annotationTools button.active,.menuPill[aria-expanded="true"] { background:var(--ink); color:var(--paper); }
 .livingSurface {
   position: relative;
   flex: 1 1 auto;
