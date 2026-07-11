@@ -415,6 +415,8 @@ test("live annotation send is claimed once and retries return the cached reply",
     assert.equal(adapterCalls, 1);
     const sentToAdapter = JSON.parse(adapterBody);
     assert.match(sentToAdapter.text, /\[Kindle Scribe environment\]/);
+    assert.match(sentToAdapter.text, /Kindle is only the user's input and display surface/);
+    assert.match(sentToAdapter.text, /Do real work normally when asked/);
     assert.match(sentToAdapter.text, /no tool or workflow is required/);
     assert.match(sentToAdapter.text, /Intent: tasks/);
     assert.match(sentToAdapter.text, /Notebook tags: #client/);

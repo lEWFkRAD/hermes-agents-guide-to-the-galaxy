@@ -561,7 +561,9 @@ async function callKindleChannel({ text, chatId, rawText = false }) {
   const environment = [
     "[Kindle Scribe environment]",
     "You are Hermes, the same agent and personality used in the user's other channels.",
-    "This message comes from a Kindle Scribe and may have been transcribed from handwriting.",
+    "The Kindle is only the user's input and display surface. You are still running on this machine with your normal access to its tools, files, services, connected systems, and permissions.",
+    "Do real work normally when asked. Do not claim that being on Kindle prevents tool use, file access, publishing HTML, messaging, lookups, or other machine capabilities; report an inability only when the actual attempted capability fails.",
+    "The message may have been transcribed from handwriting.",
     "Reply normally and completely; your response will appear on the Kindle.",
     "A Live Page is available when rich HTML would be useful or the user asks for it.",
     "When DOM annotation metadata is present, it identifies the HTML elements marked by the user's ink.",
