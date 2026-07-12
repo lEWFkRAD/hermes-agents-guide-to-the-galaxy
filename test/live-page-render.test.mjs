@@ -30,8 +30,8 @@ test("live ink uses the same smooth curve for display and Hermes export", async 
 
 test("live shell cache-busts the current renderer and Journey assets", async () => {
   const html = await fs.readFile(path.join(repoRoot, "public", "live.html"), "utf8");
-  assert.match(html, /live\.css\?v=15/);
-  assert.match(html, /live\.js\?v=32/);
+  assert.match(html, /live\.css\?v=16/);
+  assert.match(html, /live\.js\?v=37/);
   assert.match(html, /class="labeledTool"/);
   assert.match(html, /id="hermesToggleBtn"/);
   assert.match(html, /id="moreToggleBtn"/);
@@ -64,6 +64,7 @@ test("annotation tools default to a compact Kindle-friendly reading mode", async
   assert.match(html, /id="liveSendBtn"/);
   assert.match(html, /id="hermesTools"[^>]*hidden/);
   assert.match(html, /id="moreTools"[^>]*hidden/);
+  assert.match(html, /id="interactModeBtn"/);
   assert.match(html, /class="selectionAction"/);
   assert.match(html, /id="moveSelectionBtn"/);
   assert.match(html, /id="askSelectionBtn"/);
@@ -73,13 +74,43 @@ test("annotation tools default to a compact Kindle-friendly reading mode", async
   assert.match(css, /\.toolActions button\s*\{[^}]*width:\s*44px/s);
   assert.match(css, /\.toolActions svg\s*\{[^}]*stroke:\s*currentColor/s);
   assert.match(source, /setToolsOpen\(false\);/);
-  assert.match(source, /if \(!drawMode\) setDrawMode\(true\);/);
+  assert.match(source, /var drawMode = false/);
+  assert.match(source, /setText\(annotationToggleBtn, drawMode \? "Scroll" : "Pen"\)/);
+  assert.match(source, /if \(drawMode\) \{[\s\S]*setDrawMode\(false\);[\s\S]*setDrawMode\(true\);/);
   assert.match(source, /pointInPolygon/);
   assert.match(source, /requestClear/);
   assert.doesNotMatch(source, /removeStorage\(/);
   assert.match(source, /requestFrame\(renderMovePreview\)/);
   assert.match(source, /streamPaintTimer/);
   assert.match(source, /Retire the old Hermes lane only after the replacement page exists/);
+});
+
+test("Kindle controls use one fixed bottom deck with stable action slots", async () => {
+  const html = await fs.readFile(path.join(repoRoot, "public", "live.html"), "utf8");
+  const css = await fs.readFile(path.join(repoRoot, "public", "live.css"), "utf8");
+  const actions = html.slice(html.indexOf('<div class="liveActions">'), html.indexOf('<div id="annotationDock"'));
+  assert.match(actions, /annotationToggleBtn[\s\S]*interactModeBtn[\s\S]*hermesToggleBtn[\s\S]*liveSendBtn[\s\S]*moreToggleBtn/);
+  assert.match(css, /\.liveBar\s*\{[^}]*position:\s*fixed[^}]*bottom:\s*0/s);
+  assert.match(css, /grid-template-columns:\s*repeat\(5, minmax\(0, 1fr\)\)/);
+  assert.match(css, /\.annotationDock\s*\{[^}]*position:\s*fixed[^}]*bottom:\s*106px/s);
+});
+
+test("server exposes a stable UI build receipt for restart drift checks", async () => {
+  const server = await fs.readFile(path.join(repoRoot, "server.mjs"), "utf8");
+  assert.match(server, /const UI_BUILD_ID = "kindle-controls-v37"/);
+  assert.match(server, /uiBuildId: UI_BUILD_ID/);
+});
+
+test("interactive mode enables scripts without granting the iframe same-origin access", async () => {
+  const html = await fs.readFile(path.join(repoRoot, "public", "live.html"), "utf8");
+  const source = await fs.readFile(path.join(repoRoot, "public", "live.js"), "utf8");
+  const server = await fs.readFile(path.join(repoRoot, "server.mjs"), "utf8");
+  assert.match(html, /sandbox="allow-same-origin"/);
+  assert.match(source, /setAttribute\("sandbox", "allow-scripts"\)/);
+  assert.doesNotMatch(source, /allow-scripts allow-same-origin/);
+  assert.match(source, /interact=1/);
+  assert.match(server, /script-src 'unsafe-inline'/);
+  assert.match(server, /connect-src 'none'/);
 });
 
 test("main Kindle notebook defaults to the tool-enabled Hermes channel", async () => {
@@ -189,6 +220,15 @@ test("lost send responses reuse the persisted claim without deleting visible ink
   assert.match(sender, /keepPendingInkSend\(\{ id: liveInkSendId, strokeIds: pendingIds \}\)/);
   assert.match(sender, /clearPendingInkSend\(liveInkSendId\)/);
   assert.doesNotMatch(sender, /queueInkOperation\("delete", \{ ids: pendingIds \}\)/);
+});
+
+test("a reload releases a stale pending-send UI lock without deleting ink", async () => {
+  const source = await fs.readFile(path.join(repoRoot, "public", "live.js"), "utf8");
+  const loadStart = source.indexOf("function loadInk");
+  const loader = source.slice(loadStart, source.indexOf("\n  function ", loadStart + 20));
+  assert.match(loader, /pendingInkSend = readPendingInkSend\(\)/);
+  assert.match(loader, /if \(pendingInkSend\) clearPendingInkSend\(pendingInkSend\.id\)/);
+  assert.doesNotMatch(loader, /strokes = \[\]/);
 });
 
 test("new page preserves active work until the replacement page succeeds", async () => {

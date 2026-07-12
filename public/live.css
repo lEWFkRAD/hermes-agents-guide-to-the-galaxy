@@ -336,3 +336,111 @@ body.viewMode #liveInk { pointer-events: none; }
     font-size: 12px;
   }
 }
+
+/* Kindle control deck v2: every primary action has a permanent position. */
+.liveShell { padding-bottom: 106px; }
+.liveBar {
+  position: fixed;
+  z-index: 30;
+  left: 0;
+  right: 0;
+  top: auto;
+  bottom: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  padding: 0;
+  border-top: 2px solid var(--ink);
+  background: var(--paper);
+  pointer-events: auto;
+}
+.liveIdentity {
+  grid-row: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 4px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px;
+}
+.liveIdentity strong { font: 700 13px/1 Arial, sans-serif; }
+.liveIdentity span { text-align: right; font: 12px/1.1 Arial, sans-serif; }
+.liveActions {
+  grid-row: 2;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0;
+  width: 100%;
+}
+.liveActions > button,
+.liveActions .menuPill {
+  width: 100%;
+  min-width: 0;
+  height: 70px;
+  min-height: 70px;
+  padding: 4px 2px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-radius: 0 !important;
+  background: var(--paper);
+  color: var(--ink);
+  font: 700 14px/1.1 Arial, sans-serif;
+}
+.liveActions > button:last-child { border-right: 0; }
+.liveActions > button[aria-expanded="true"],
+body.drawMode #annotationToggleBtn,
+body.interactMode #interactModeBtn { background: var(--ink); color: var(--paper); }
+.annotationDock {
+  position: fixed;
+  z-index: 31;
+  left: 0;
+  right: 0;
+  bottom: 106px;
+  display: block;
+  pointer-events: none;
+}
+.annotationTools,
+.pillMenu {
+  position: static;
+  width: 100%;
+  min-width: 0;
+  max-height: 190px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 2px solid var(--ink);
+  border-left: 0;
+  border-right: 0;
+  background: var(--paper);
+  pointer-events: auto;
+}
+.annotationTools[hidden], .pillMenu[hidden] { display: none !important; }
+.toolActions {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
+}
+.toolActions button,
+.pillMenu button {
+  width: 100%;
+  min-width: 0;
+  min-height: 52px;
+  padding: 5px 3px;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  font: 700 12px/1.1 Arial, sans-serif;
+}
+.pillMenu { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+#hermesTools { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+#hermesTools .cornerIcon { width: 100%; min-width: 0; height: 54px; }
+.liveReply { bottom: 106px; max-height: 44%; }
+@media (max-width: 470px) {
+  .liveShell { padding-bottom: 98px; }
+  .liveIdentity { height: 32px; }
+  .liveActions > button, .liveActions .menuPill { height: 64px; min-height: 64px; font-size: 12px; }
+  .annotationDock { bottom: 98px; }
+  .liveReply { bottom: 98px; }
+}

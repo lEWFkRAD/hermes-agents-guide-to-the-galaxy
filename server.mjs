@@ -22,6 +22,7 @@ const liveWriteTokenFile = path.join(dataDir, "live-page-write.token");
 const liveSourceFile = path.join(dataDir, "live-page-source.html");
 const liveTransitionFile = path.join(dataDir, "live-page-transition.json");
 const livePublisherScript = path.join(__dirname, "scripts", "publish-live-page.mjs");
+const UI_BUILD_ID = "kindle-controls-v37";
 
 let sessions = [];
 let sessionsSaveQueue = Promise.resolve();
@@ -1077,6 +1078,7 @@ async function handleLivePageApi(req, res) {
     }
     const page = snapshot.page;
     const theme = url.searchParams.get("theme") === "dark" ? "dark" : "light";
+    const interactive = url.searchParams.get("interact") === "1";
     const etag = `"${page.revision}:${theme}"`;
     if (req.headers["if-none-match"] === etag) {
       send(res, 304, "", "text/html; charset=utf-8", { etag });
@@ -1085,7 +1087,9 @@ async function handleLivePageApi(req, res) {
     res.writeHead(200, {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store",
-      "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'",
+      "content-security-policy": interactive
+        ? "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
+        : "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'",
       "referrer-policy": "no-referrer",
       "x-content-type-options": "nosniff",
       etag
@@ -1789,6 +1793,7 @@ const server = http.createServer(async (req, res) => {
       localTextEndpoint,
       localTextModel,
       hermesEndpoint,
+      uiBuildId: UI_BUILD_ID,
       hasHermesToken: Boolean(hermesToken),
       authRequired: Boolean(authToken)
     }));

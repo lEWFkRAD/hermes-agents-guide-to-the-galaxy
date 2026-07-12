@@ -91,6 +91,7 @@
   var moreToggleBtn = document.getElementById("moreToggleBtn");
   var hermesToolsEl = document.getElementById("hermesTools");
   var moreToolsEl = document.getElementById("moreTools");
+  var interactModeBtn = document.getElementById("interactModeBtn");
   var emptyHintEl = document.getElementById("emptyHint");
   var liveSendBtn = document.getElementById("liveSendBtn");
   var liveHistoryEl = document.getElementById("liveHistory");
@@ -106,7 +107,10 @@
   var strokes = [];
   var currentStroke = null;
   var drawing = false;
-  var drawMode = true;
+  // Published HTML opens in reading mode so gestures scroll the iframe.
+  // The top-level Pen control explicitly enters and leaves drawing mode.
+  var drawMode = false;
+  var interactMode = false;
   var toolsOpen = false;
   var eraserMode = false;
   var inkClipboard = [];
@@ -417,6 +421,10 @@
   function loadInk() {
     deviceId = ensureDeviceId();
     pendingInkSend = readPendingInkSend();
+    // A page reload means there is no live XHR left to complete this client-side
+    // claim. Preserve the strokes as unsent, but release the stale UI lock so
+    // Pen, Undo, and Clear remain usable after a failed or tool-published turn.
+    if (pendingInkSend) clearPendingInkSend(pendingInkSend.id);
     var saved = [];
     try { saved = JSON.parse(storageGet(INK_STORAGE_KEY) || "[]"); } catch (error) {}
     strokes = normalizeStrokeList(saved);
@@ -1088,13 +1096,37 @@
 
   function updateBodyMode() {
     document.body.className = "livePage " +
-      (drawMode ? "drawMode" : "viewMode") + " " +
+      (interactMode ? "interactMode" : (drawMode ? "drawMode" : "viewMode")) + " " +
       (toolsOpen ? "toolsOpen" : "toolsCollapsed");
+  }
+
+  function frameContentUrl() {
+    var query = accessQuery();
+    if (interactMode) query += (query ? "&" : "?") + "interact=1";
+    return "/api/live-page/content" + query;
+  }
+
+  function setInteractMode(enabled) {
+    interactMode = !!enabled;
+    if (interactMode) {
+      setDrawMode(false);
+      setToolsOpen(false);
+      frameEl.setAttribute("sandbox", "allow-scripts");
+      setText(stateEl, "Interactive mode");
+    } else {
+      frameEl.setAttribute("sandbox", "allow-same-origin");
+      setText(stateEl, "Scroll mode");
+    }
+    setText(interactModeBtn, interactMode ? "Scroll" : "Interact");
+    updateBodyMode();
+    if (revision) frameEl.src = frameContentUrl();
   }
 
   function setDrawMode(enabled) {
     drawMode = !!enabled;
-    if(drawMode&&!eraserMode&&!lassoMode&&!moveMode)setText(annotationToggleBtn,"Pen");
+    if (!eraserMode && !lassoMode && !moveMode) {
+      setText(annotationToggleBtn, drawMode ? "Scroll" : "Pen");
+    }
     updateBodyMode();
     setText(drawModeBtn, drawMode ? "Done" : "Draw");
     drawModeBtn.className = drawMode ? "active" : "";
@@ -1241,7 +1273,7 @@
       loadMetadata(true);setText(stateEl,"New page");
     });
   }
-  function toggleTheme() { darkMode=!darkMode; try { if(darkMode) window.localStorage.setItem("diaryDark","1"); else window.localStorage.removeItem("diaryDark"); } catch(error){} document.documentElement.className=darkMode?"dark":""; setText(liveThemeBtn,darkMode?"Light":"Dark"); if(revision) frameEl.src="/api/live-page/content"+accessQuery(); }
+  function toggleTheme() { darkMode=!darkMode; try { if(darkMode) window.localStorage.setItem("diaryDark","1"); else window.localStorage.removeItem("diaryDark"); } catch(error){} document.documentElement.className=darkMode?"dark":""; setText(liveThemeBtn,darkMode?"Light":"Dark"); if(revision) frameEl.src=frameContentUrl(); }
 
   function startProgress(intent) {
     var phases = ["Received", "Reading the page", "Thinking", "Using Hermes", "Checking for HTML updates"];
@@ -1307,7 +1339,7 @@
     setText(stateEl, formatUpdated(page));
     document.title = (page.title || "HTML") + " · Hermes";
     showMessage("Opening the new version…");
-    frameEl.src = "/api/live-page/content" + accessQuery();
+    frameEl.src = frameContentUrl();
   }
   function schedulePoll() {
     if (pollTimer) window.clearTimeout(pollTimer);
@@ -1406,6 +1438,9 @@
     function finishError(message) {
       if (done) return;
       done = true;
+      // A failed/late final Kindle send must not leave the canvas permanently
+      // locked. The strokes remain unsent and can be included in the next send.
+      clearPendingInkSend(liveInkSendId);
       setSendBusy(false);
       stopProgress("Could not send annotation");
       showReply(message || "The annotation could not be sent. Your ink is still here.");
@@ -1481,11 +1516,18 @@
   add(frameEl, "load", hideMessage);
   add(annotationToggleBtn, "click", function () {
     closeMenus("pen");
-    if (!drawMode) setDrawMode(true);
-    setToolsOpen(!toolsOpen);
+    if (interactMode) setInteractMode(false);
+    if (drawMode) {
+      setToolsOpen(false);
+      setDrawMode(false);
+    } else {
+      setDrawMode(true);
+      setToolsOpen(true);
+    }
   });
   add(hermesToggleBtn, "click", function () { toggleMenu("hermes", hermesToolsEl, hermesToggleBtn); });
   add(moreToggleBtn, "click", function () { toggleMenu("more", moreToolsEl, moreToggleBtn); });
+  add(interactModeBtn, "click", function () { closeMenus(""); setInteractMode(!interactMode); });
   add(drawModeBtn, "click", function () { setDrawMode(!drawMode); });
   add(sendInkBtn, "click", function () { sendInkToHermes(""); });
   add(liveSendBtn, "click", function () { sendInkToHermes(""); });
@@ -1543,6 +1585,7 @@
 
   loadInk();
   setText(liveThemeBtn, darkMode ? "Light" : "Dark");
+  setDrawMode(false);
   setToolsOpen(false);
   resizeCanvas();
   loadMetadata(true);
