@@ -133,9 +133,10 @@ bookmark it. Config is via env vars (all optional):
   a native Android/BOOX tester client connected through the same Notebook
   gateway and Hermes session model.
 - **Pen input** tuned for e-ink — batched strokes, coalesced points, undo.
-- **Two-stage handwriting OCR** — a vision model reads the ink, then Qwen3.6
-  minimally corrects spacing and likely proper names before Hermes sees it. Raw
-  and corrected transcriptions are retained with the diary entry.
+- **Multi-read handwriting OCR** — tightly cropped, lossless ink is read twice,
+  then reconciled for spacing, likely wording, alternatives, and calibrated
+  confidence before Hermes sees it. Raw and cleaned transcriptions are retained
+  with the diary entry.
 - **Uncertainty-aware handwriting** — raw and cleaned readings remain visible
   to Hermes. Names, dates, amounts, commands, and unfamiliar search terms should
   be clarified before broad or consequential tool work.

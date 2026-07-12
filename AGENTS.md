@@ -7,6 +7,9 @@ Instructions for human and AI contributors working in this repository.
 - `server.mjs` is the browser-facing diary bridge.
 - `public/` is the Kindle-optimized client. Preserve stock Kindle Scribe browser compatibility and e-ink interaction constraints.
 - `kindle-plugin/` is the installable Hermes platform adapter.
+- Native Android/BOOX client work is coordinated with the upstream Notebook
+  adapter in Hermes PR #61687; do not imply that this repository's browser
+  bundle is the native APK or that iPadOS is already shipped.
 - `test/` contains Node and Python tests.
 - The bridge may be LAN-facing. The Hermes adapter must remain bound to localhost; never expose port `8793` publicly.
 
