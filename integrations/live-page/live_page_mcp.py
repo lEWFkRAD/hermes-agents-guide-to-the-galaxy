@@ -126,9 +126,10 @@ def live_page_read() -> dict[str, Any]:
 def live_page_publish(html: str) -> dict[str, Any]:
     """Publish a complete self-contained HTML/CSS document to the Kindle Live Page.
 
-    Use this when creating the page or substantially changing its structure. Scripts,
-    forms, embedded frames, event handlers, and external network URLs are stripped by
-    the server. The editable source is retained so later turns can evolve the same page.
+    Use this when creating the page or substantially changing its structure. Self-contained
+    scripts, forms, controls, and event handlers are preserved for isolated Interact mode.
+    Embedded frames and external network URLs are stripped by the server. The editable
+    source is retained so later turns can evolve the same page.
     """
     return _publish(html)
 

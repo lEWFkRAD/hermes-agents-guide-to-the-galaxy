@@ -22,7 +22,8 @@ const liveWriteTokenFile = path.join(dataDir, "live-page-write.token");
 const liveSourceFile = path.join(dataDir, "live-page-source.html");
 const liveTransitionFile = path.join(dataDir, "live-page-transition.json");
 const livePublisherScript = path.join(__dirname, "scripts", "publish-live-page.mjs");
-const UI_BUILD_ID = "kindle-controls-v37";
+const uiAssetBytes = await Promise.all(["live.css", "live.js"].map(name => fs.readFile(path.join(publicDir, name))));
+const UI_BUILD_ID = "kindle-" + crypto.createHash("sha256").update(Buffer.concat(uiAssetBytes)).digest("hex").slice(0, 16);
 
 let sessions = [];
 let sessionsSaveQueue = Promise.resolve();
@@ -622,8 +623,9 @@ async function callChatStream({ endpoint, model, token, text, imageDataUrl, hist
 }
 
 // Firm-agent CHANNEL call: hand the note to the Kindle gateway platform adapter,
-// which runs the real agent (MoA + tools) and returns its reply. Non-streaming v1.
-async function callKindleChannel({ text, chatId, rawText = false }) {
+// which runs the real agent (MoA + tools). New adapters stream cumulative NDJSON
+// snapshots; older adapters still return one JSON reply.
+async function callKindleChannel({ text, chatId, rawText = false, onSnapshot = null }) {
   const environment = [
     "[Kindle Scribe environment]",
     "You are Hermes, the same agent and personality used in the user's other channels.",
@@ -637,20 +639,56 @@ async function callKindleChannel({ text, chatId, rawText = false }) {
     "[/Kindle Scribe environment]"
   ].join("\n");
   let response;
+  const wantsStream = typeof onSnapshot === "function";
   try {
     response = await fetch(kindleAdapterUrl, {
       method: "POST",
       headers: {
         "content-type": "application/json",
+        ...(wantsStream ? { accept: "application/x-ndjson" } : {}),
         ...(kindleIngestToken ? { "x-kindle-token": kindleIngestToken } : {})
       },
-      body: JSON.stringify({ text: rawText ? text : `${environment}\n\n${text}`, user: kindleUser, chat_id: chatId })
+      body: JSON.stringify({
+        text: rawText ? text : `${environment}\n\n${text}`,
+        user: kindleUser,
+        chat_id: chatId,
+        stream: wantsStream
+      })
     });
   } catch {
     throw new Error(
       "Firm agent channel isn't running. Start the Hermes gateway with the kindle " +
       "platform, then try the firm agent again."
     );
+  }
+  const contentType = response.headers.get("content-type") || "";
+  if (wantsStream && response.ok && response.body && contentType.includes("application/x-ndjson")) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let finalText = "";
+    const consumeLine = line => {
+      if (!line.trim()) return;
+      let frame;
+      try { frame = JSON.parse(line); }
+      catch { throw new Error(`Channel returned unreadable stream data: ${line.slice(0, 200)}`); }
+      if (frame.type === "error" || frame.error) throw new Error(frame.error || "Channel stream failed");
+      if (frame.type !== "snapshot" || typeof frame.text !== "string") return;
+      finalText = frame.text;
+      onSnapshot(frame.text, frame.final === true);
+    };
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      let newline;
+      while ((newline = buffer.indexOf("\n")) >= 0) {
+        consumeLine(buffer.slice(0, newline));
+        buffer = buffer.slice(newline + 1);
+      }
+      if (done) break;
+    }
+    if (buffer.trim()) consumeLine(buffer);
+    return { text: finalText };
   }
   const raw = await response.text();
   let json;
@@ -1078,8 +1116,8 @@ async function handleLivePageApi(req, res) {
     }
     const page = snapshot.page;
     const theme = url.searchParams.get("theme") === "dark" ? "dark" : "light";
-    const interactive = url.searchParams.get("interact") === "1";
-    const etag = `"${page.revision}:${theme}"`;
+    const interactive = snapshot.page.interactive === true && url.searchParams.get("interact") === "1";
+    const etag = `"${page.revision}:${theme}:${interactive ? "interact" : "static"}"`;
     if (req.headers["if-none-match"] === etag) {
       send(res, 304, "", "text/html; charset=utf-8", { etag });
       return;
@@ -1123,7 +1161,8 @@ async function handleLivePageApi(req, res) {
     }
     try {
       const body = JSON.parse(await readBody(req, 1_000_000) || "{}");
-      const input = body.page && typeof body.page === "object" ? body.page : body;
+      const requested = body.page && typeof body.page === "object" ? body.page : body;
+      const input = { ...requested, interactive: true };
       const page = await publishLivePage(input);
       logSend({ kind: "live-page-publish", revision: page.revision, title: page.title });
       send(res, 200, JSON.stringify({ ok: true, page }), "application/json; charset=utf-8", {
@@ -1273,7 +1312,8 @@ async function handleSend(req, res) {
         livePageContext = formatLivePageSnapshot(claimed.page, claimed.html);
         liveInkClaimId = liveInkSendId;
       } catch (error) {
-        send(res, Number(error.status) || 409, JSON.stringify({ ok: false, error: error.message }));
+        const code = error.message === "these annotations are already being sent" ? "send_in_progress" : "send_rejected";
+        send(res, Number(error.status) || 409, JSON.stringify({ ok: false, code, error: error.message }));
         return;
       }
     }
@@ -1453,12 +1493,27 @@ async function handleSend(req, res) {
         res.writeHead(200, {
           "content-type": "text/plain; charset=utf-8",
           "cache-control": "no-store",
+          "x-accel-buffering": "no",
           "access-control-allow-origin": "*"
         });
         res.write(JSON.stringify({ sessionId: session.id, hermesThreadId: session.channelThreadId }) + "\n");
       }
 
       let result;
+      let streamedText = "";
+      const relaySnapshot = snapshot => {
+        if (!wantStream) return;
+        // Some Windows gateway paths expose the UTF-8 cursor bytes as the
+        // cp1252-looking sequence \u00e2\u2013\u2030. Remove either spelling so
+        // the next cumulative snapshot remains a prefix extension.
+        const next = String(snapshot || "").replace(/(?:\s|\u2589|\u00e2\u2013\u2030)+$/g, "");
+        if (!next || next === streamedText) return;
+        // Hermes platform edits are cumulative. Plain XHR streaming cannot
+        // retract bytes, so relay only the newly appended suffix. The final
+        // canonical text is also sent in the trailer for replacement-safe UI.
+        if (next.startsWith(streamedText)) res.write(next.slice(streamedText.length));
+        streamedText = next;
+      };
       // Snapshot every Kindle request, including older notebook clients. Tools
       // may publish while Hermes is answering even when the client did not
       // identify itself as the Live Page.
@@ -1469,7 +1524,8 @@ async function handleSend(req, res) {
           chatId: session.channelThreadId,
           source: isLivePageSource ? "live-page" : "",
           baseRevision: livePageRevision,
-          currentRevision: beforeLiveRevision
+          currentRevision: beforeLiveRevision,
+          onSnapshot: wantStream ? relaySnapshot : null
         });
         if (ocrNeedsClarification) logSend({ kind: "ocr_clarification", cleanedTranscription, ocrAlternatives, ocrConfidence });
       } catch (error) {
@@ -1519,12 +1575,20 @@ async function handleSend(req, res) {
         durationMs: Date.now() - startedCh, intent, tags, pageChanged
       });
       if (wantStream) {
-        // The platform adapter returns a completed turn. Deliver it in bounded
-        // writes so old Kindle WebKit receives the entire response reliably,
-        // without adding theatrical delays that look like model streaming.
-        const chunks = result.text.match(/[\s\S]{1,320}/g) || [];
-        for (const chunk of chunks) res.write(chunk);
-        res.write(RS + JSON.stringify({ title: session.title, pageChanged, page: pageChanged ? afterLivePage : undefined }));
+        // Legacy adapters produce no snapshots, so retain the complete-response
+        // fallback. New adapters have already relayed genuine generation edits.
+        if (!streamedText) {
+          const chunks = result.text.match(/[\s\S]{1,320}/g) || [];
+          for (const chunk of chunks) res.write(chunk);
+        } else if (result.text.startsWith(streamedText)) {
+          res.write(result.text.slice(streamedText.length));
+        }
+        res.write(RS + JSON.stringify({
+          title: session.title,
+          text: result.text,
+          pageChanged,
+          page: pageChanged ? afterLivePage : undefined
+        }));
         res.end();
       } else {
         send(res, 200, JSON.stringify(hermesResponse));
@@ -1746,7 +1810,8 @@ async function serveStatic(req, res) {
     return;
   }
   try {
-    const data = await fs.readFile(file);
+    let data = await fs.readFile(file);
+    if (rel === "/live.html") data = Buffer.from(data.toString("utf8").replace(/__UI_BUILD_ID__/g, UI_BUILD_ID));
     send(res, 200, data, mime[path.extname(file)] || "application/octet-stream");
   } catch {
     send(res, 404, "Not found", "text/plain; charset=utf-8");

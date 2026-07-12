@@ -107,19 +107,17 @@
   var strokes = [];
   var currentStroke = null;
   var drawing = false;
-  // Published HTML opens in reading mode so gestures scroll the iframe.
-  // The top-level Pen control explicitly enters and leaves drawing mode.
-  var drawMode = false;
-  var interactMode = false;
-  var toolsOpen = false;
-  var eraserMode = false;
+  // One authoritative surface state. Impossible combinations such as
+  // draw+interact are deliberately not representable.
+  var surfaceMode = "scroll";
+  var activePanel = "";
+  var inkTool = "pen";
   var inkClipboard = [];
-  var lassoMode = false;
   var lassoing = false;
   var lassoPoints = [];
   var selectedStrokeIds = [];
   var clearArmed = false, clearTimer = null;
-  var moveMode=false,movingSelection=false,moveStart=null,moveOriginals=[];
+  var movingSelection=false,moveStart=null,moveOriginals=[];
   var movePreviewFrame=null,movePreviewPoint=null;
   var streamPaintTimer=null,lastStreamPaint="";
   var newPageBusy=false;
@@ -334,9 +332,9 @@
   }
 
   function updateInkButtons() {
-    undoInkBtn.disabled = sendBusy || !!pendingInkSend || localUndoIndex() < 0;
-    clearInkBtn.disabled = sendBusy || (!strokes.length && !pendingInkSend);
-    drawModeBtn.disabled = sendBusy || !!pendingInkSend;
+    undoInkBtn.disabled = sendBusy || localUndoIndex() < 0;
+    clearInkBtn.disabled = sendBusy || !strokes.length;
+    drawModeBtn.disabled = sendBusy;
     var cannotSend = sendBusy || !inkSyncReady || hasPendingAddOperations() || (!pendingInkSend && !strokes.length);
     if (sendInkBtn) sendInkBtn.disabled = cannotSend;
     if (liveSendBtn) liveSendBtn.disabled = cannotSend;
@@ -421,10 +419,8 @@
   function loadInk() {
     deviceId = ensureDeviceId();
     pendingInkSend = readPendingInkSend();
-    // A page reload means there is no live XHR left to complete this client-side
-    // claim. Preserve the strokes as unsent, but release the stale UI lock so
-    // Pen, Undo, and Clear remain usable after a failed or tool-published turn.
-    if (pendingInkSend) clearPendingInkSend(pendingInkSend.id);
+    // Persisted send identity is a delivery receipt, not a UI lock. Reusing it
+    // after a timeout/reload lets the server return the cached completion.
     var saved = [];
     try { saved = JSON.parse(storageGet(INK_STORAGE_KEY) || "[]"); } catch (error) {}
     strokes = normalizeStrokeList(saved);
@@ -920,16 +916,16 @@
   }
 
   function startInk(event) {
-    if (!drawMode || sendBusy || pendingInkSend) return true;
+    if (surfaceMode !== "pen" || sendBusy) return true;
     emptyHintDismissed = true;
     if (emptyHintEl) emptyHintEl.hidden = true;
     // Fast pen input can deliver the next down before the previous up is
     // observed. Persist that completed geometry instead of orphaning it when
     // currentStroke is replaced below.
     if (drawing && currentStroke) commitCurrentStroke();
-    if(moveMode&&selectedStrokeIds.length){movingSelection=true;moveStart=pointFromEvent(event);moveOriginals=[];for(var mi=0;mi<strokes.length;mi+=1)if(selectedStrokeIds.indexOf(strokes[mi].id)>=0)moveOriginals.push({index:mi,stroke:JSON.parse(JSON.stringify(strokes[mi]))});return stopEvent(event);}
-    if (lassoMode) { lassoing = true; lassoPoints = [pointFromEvent(event)]; return stopEvent(event); }
-    if (eraserMode) {
+    if(inkTool==="move"&&selectedStrokeIds.length){movingSelection=true;moveStart=pointFromEvent(event);moveOriginals=[];for(var mi=0;mi<strokes.length;mi+=1)if(selectedStrokeIds.indexOf(strokes[mi].id)>=0)moveOriginals.push({index:mi,stroke:JSON.parse(JSON.stringify(strokes[mi]))});return stopEvent(event);}
+    if (inkTool === "lasso") { lassoing = true; lassoPoints = [pointFromEvent(event)]; return stopEvent(event); }
+    if (inkTool === "eraser") {
       var eraserPoint = pointFromEvent(event), removedIds = [];
       for (var eraseIndex = strokes.length - 1; eraseIndex >= 0; eraseIndex -= 1) {
         var erasePoints = strokes[eraseIndex].points || [], hit = false;
@@ -1018,7 +1014,7 @@
   }
 
   function endInk(event) {
-    if(movingSelection){movePreviewPoint=pointFromEvent(event);renderMovePreview();movingSelection=false;var oldIds=[],newIds=[];for(var mm=0;mm<moveOriginals.length;mm+=1){oldIds.push(moveOriginals[mm].stroke.id);var moved=strokes[moveOriginals[mm].index];moved.id=nextInkId("stroke");moved.sent=false;newIds.push(moved.id);queueInkOperation("add",{stroke:moved});}queueInkOperation("delete",{ids:oldIds});selectedStrokeIds=newIds;moveMode=false;if(moveSelectionBtn)moveSelectionBtn.className="selectionAction";setText(annotationToggleBtn,"Pen");saveInk();redrawInk();updateInkButtons();setText(stateEl,"Selection moved");return stopEvent(event);}
+    if(movingSelection){movePreviewPoint=pointFromEvent(event);renderMovePreview();movingSelection=false;var oldIds=[],newIds=[];for(var mm=0;mm<moveOriginals.length;mm+=1){oldIds.push(moveOriginals[mm].stroke.id);var moved=strokes[moveOriginals[mm].index];moved.id=nextInkId("stroke");moved.sent=false;newIds.push(moved.id);queueInkOperation("add",{stroke:moved});}queueInkOperation("delete",{ids:oldIds});selectedStrokeIds=newIds;setInkTool("pen");saveInk();redrawInk();updateInkButtons();setText(stateEl,"Selection moved");return stopEvent(event);}
     if (lassoing) {
       lassoing = false;
       if (lassoPoints.length > 2) {
@@ -1096,51 +1092,48 @@
 
   function updateBodyMode() {
     document.body.className = "livePage " +
-      (interactMode ? "interactMode" : (drawMode ? "drawMode" : "viewMode")) + " " +
-      (toolsOpen ? "toolsOpen" : "toolsCollapsed");
+      (surfaceMode === "pen" ? "drawMode" : (surfaceMode === "interact" ? "interactMode" : "viewMode")) + " " +
+      (activePanel ? "toolsOpen" : "toolsCollapsed");
   }
 
   function frameContentUrl() {
     var query = accessQuery();
-    if (interactMode) query += (query ? "&" : "?") + "interact=1";
+    if (surfaceMode === "interact") query += (query ? "&" : "?") + "interact=1";
     return "/api/live-page/content" + query;
   }
 
-  function setInteractMode(enabled) {
-    interactMode = !!enabled;
-    if (interactMode) {
-      setDrawMode(false);
-      setToolsOpen(false);
-      frameEl.setAttribute("sandbox", "allow-scripts");
-      setText(stateEl, "Interactive mode");
-    } else {
-      frameEl.setAttribute("sandbox", "allow-same-origin");
-      setText(stateEl, "Scroll mode");
+  function setSurfaceMode(nextMode) {
+    if (nextMode !== "scroll" && nextMode !== "pen" && nextMode !== "interact") return;
+    var previousMode = surfaceMode;
+    if (previousMode === "pen" && nextMode !== "pen" && drawing) commitCurrentStroke();
+    surfaceMode = nextMode;
+    if (surfaceMode !== "pen") {
+      if (activePanel === "pen") setActivePanel("");
+      setInkTool("pen");
     }
-    setText(interactModeBtn, interactMode ? "Scroll" : "Interact");
+    frameEl.setAttribute("sandbox", surfaceMode === "interact" ? "allow-scripts" : "allow-same-origin");
+    if (inkTool === "pen") {
+      setText(annotationToggleBtn, surfaceMode === "pen" ? "Scroll" : "Pen");
+    }
+    setText(interactModeBtn, surfaceMode === "interact" ? "Scroll" : "Interact");
+    setText(drawModeBtn, surfaceMode === "pen" ? "Done" : "Draw");
+    drawModeBtn.className = "labeledTool" + (surfaceMode === "pen" ? " active" : "");
+    drawModeBtn.setAttribute("aria-pressed", surfaceMode === "pen" ? "true" : "false");
+    setText(stateEl, surfaceMode === "interact" ? "Interactive mode" : (surfaceMode === "pen" ? "Pen mode" : "Scroll mode"));
     updateBodyMode();
-    if (revision) frameEl.src = frameContentUrl();
+    if (revision && (previousMode === "interact" || surfaceMode === "interact")) frameEl.src = frameContentUrl();
   }
 
-  function setDrawMode(enabled) {
-    drawMode = !!enabled;
-    if (!eraserMode && !lassoMode && !moveMode) {
-      setText(annotationToggleBtn, drawMode ? "Scroll" : "Pen");
+  function setActivePanel(name) {
+    if (name !== "pen" && name !== "hermes" && name !== "more") name = "";
+    activePanel = name;
+    var panels = [["pen",annotationToolsEl,annotationToggleBtn],["hermes",hermesToolsEl,hermesToggleBtn],["more",moreToolsEl,moreToggleBtn]];
+    for (var i = 0; i < panels.length; i += 1) {
+      var expanded = activePanel === panels[i][0];
+      panels[i][1].hidden = !expanded;
+      panels[i][2].setAttribute("aria-expanded", expanded ? "true" : "false");
     }
-    updateBodyMode();
-    setText(drawModeBtn, drawMode ? "Done" : "Draw");
-    drawModeBtn.className = drawMode ? "active" : "";
-    drawModeBtn.setAttribute("aria-pressed", drawMode ? "true" : "false");
-    if (!drawMode && drawing) commitCurrentStroke();
-  }
-
-  function setToolsOpen(enabled) {
-    toolsOpen = !!enabled;
-    if (annotationToolsEl) annotationToolsEl.hidden = !toolsOpen;
-    if (annotationToggleBtn) {
-      annotationToggleBtn.setAttribute("aria-expanded", toolsOpen ? "true" : "false");
-      annotationToggleBtn.setAttribute("aria-label", toolsOpen ? "Close annotation tools" : "Open annotation tools");
-    }
+    annotationToggleBtn.setAttribute("aria-label", activePanel === "pen" ? "Close annotation tools" : "Open annotation tools");
     updateBodyMode();
   }
 
@@ -1176,15 +1169,22 @@
   function renderMovePreview(){movePreviewFrame=null;if(!movingSelection||!movePreviewPoint)return;var dx=movePreviewPoint.x-moveStart.x,dy=movePreviewPoint.y-moveStart.y;for(var mo=0;mo<moveOriginals.length;mo+=1){var original=moveOriginals[mo].stroke,current=strokes[moveOriginals[mo].index];for(var mpt=0;mpt<original.points.length;mpt+=1){current.points[mpt].x=Math.max(0,Math.min(1,original.points[mpt].x+dx));current.points[mpt].y=Math.max(0,Math.min(1,original.points[mpt].y+dy));}}redrawInk();}
   function requestClear(){if(!clearArmed){clearArmed=true;setText(clearInkBtn,"Tap again to clear");setText(stateEl,"Clear all ink?");if(clearTimer)window.clearTimeout(clearTimer);clearTimer=window.setTimeout(function(){clearArmed=false;setText(clearInkBtn,"Clear ink");},4000);return;}clearArmed=false;if(clearTimer)window.clearTimeout(clearTimer);setText(clearInkBtn,"Clear ink");clearInk();}
   function pointInPolygon(point, polygon){var inside=false;for(var i=0,j=polygon.length-1;i<polygon.length;j=i++){var a=polygon[i],b=polygon[j];if(((a.y>point.y)!==(b.y>point.y))&&(point.x<(b.x-a.x)*(point.y-a.y)/(b.y-a.y||.000001)+a.x))inside=!inside;}return inside;}
-  function closeMenus(except) { var menus=[["pen",annotationToolsEl,annotationToggleBtn],["hermes",hermesToolsEl,hermesToggleBtn],["more",moreToolsEl,moreToggleBtn]]; for(var i=0;i<menus.length;i+=1){if(menus[i][0]!==except){menus[i][1].hidden=true;menus[i][2].setAttribute("aria-expanded","false");}} }
-  function toggleMenu(name, menu, button) { var opening=menu.hidden; closeMenus(name); menu.hidden=!opening; button.setAttribute("aria-expanded",opening?"true":"false"); if(name==="pen")toolsOpen=opening; }
+  function togglePanel(name) { setActivePanel(activePanel === name ? "" : name); }
+
+  function setInkTool(nextTool) {
+    if (nextTool !== "pen" && nextTool !== "eraser" && nextTool !== "lasso" && nextTool !== "move") nextTool = "pen";
+    inkTool = nextTool;
+    eraserInkBtn.className = "labeledTool" + (inkTool === "eraser" ? " active" : "");
+    lassoInkBtn.className = "labeledTool" + (inkTool === "lasso" ? " active" : "");
+    moveSelectionBtn.className = "selectionAction" + (inkTool === "move" ? " active" : "");
+    var label = inkTool === "eraser" ? "Eraser" : (inkTool === "lasso" ? "Select" : (inkTool === "move" ? "Move" : "Pen"));
+    setText(stateEl, inkTool === "move" ? "Drag selection to move" : label);
+    setText(annotationToggleBtn, surfaceMode === "pen" && inkTool !== "pen" ? label : (surfaceMode === "pen" ? "Scroll" : "Pen"));
+  }
 
   function toggleEraser() {
-    eraserMode = !eraserMode;
-    if (eraserInkBtn) eraserInkBtn.className = eraserMode ? "labeledTool active" : "labeledTool";
-    if (eraserMode && !drawMode) setDrawMode(true);
-    setText(stateEl, eraserMode ? "Eraser" : "Pen");
-    setText(annotationToggleBtn,eraserMode?"Eraser":"Pen");
+    if (surfaceMode !== "pen") setSurfaceMode("pen");
+    setInkTool(inkTool === "eraser" ? "pen" : "eraser");
   }
 
   function copyInk() {
@@ -1194,7 +1194,7 @@
     updateInkButtons();
   }
 
-  function toggleLasso() { lassoMode=!lassoMode; eraserMode=false; if(eraserInkBtn) eraserInkBtn.className="labeledTool"; if(lassoInkBtn) lassoInkBtn.className=lassoMode?"labeledTool active":"labeledTool"; setText(stateEl,lassoMode?"Select":"Pen"); setText(annotationToggleBtn,lassoMode?"Select":"Pen"); }
+  function toggleLasso() { if(surfaceMode!=="pen")setSurfaceMode("pen");setInkTool(inkTool==="lasso"?"pen":"lasso"); }
   function rotateSelection() {
     var chosen=[]; for(var i=0;i<strokes.length;i+=1) if(selectedStrokeIds.indexOf(strokes[i].id)>=0) chosen.push(strokes[i]); if(!chosen.length)return;
     var cx=0,cy=0,n=0; for(var s=0;s<chosen.length;s+=1)for(var p=0;p<chosen[s].points.length;p+=1){cx+=chosen[s].points[p].x;cy+=chosen[s].points[p].y;n+=1;} cx/=n;cy/=n;
@@ -1202,7 +1202,7 @@
     queueInkOperation("delete",{ids:oldIds}); selectedStrokeIds=[]; redrawInk();saveInk();updateInkButtons();
   }
   function deleteSelection(){if(!selectedStrokeIds.length)return;var ids=selectedStrokeIds.slice(0),kept=[];for(var i=0;i<strokes.length;i+=1)if(ids.indexOf(strokes[i].id)<0)kept.push(strokes[i]);strokes=kept;selectedStrokeIds=[];queueInkOperation("delete",{ids:ids});redrawInk();saveInk();updateInkButtons();setText(stateEl,"Selection deleted");}
-  function toggleMoveSelection(){moveMode=!moveMode;lassoMode=false;if(lassoInkBtn)lassoInkBtn.className="labeledTool";if(moveSelectionBtn)moveSelectionBtn.className=moveMode?"selectionAction active":"selectionAction";setText(stateEl,moveMode?"Drag selection to move":"Selection ready");setText(annotationToggleBtn,moveMode?"Move":"Pen");}
+  function toggleMoveSelection(){if(surfaceMode!=="pen")setSurfaceMode("pen");setInkTool(inkTool==="move"?"pen":"move");}
 
   function pasteInk() {
     for (var i = 0; i < inkClipboard.length; i += 1) {
@@ -1267,7 +1267,7 @@
       sessionId="";hermesThreadId=newHermesThreadId();
       emptyHintDismissed=false;
       storageRemove("diarySessionId");storageSet("diaryHermesThreadId",hermesThreadId);
-      clearInk();hideReply();setToolsOpen(false);closeMenus("");
+      clearInk();hideReply();setActivePanel("");
       // Retire the old Hermes lane only after the replacement page exists.
       if(previousThreadId)requestJson("POST","/api/channel/reset",{chatId:previousThreadId},function(){});
       loadMetadata(true);setText(stateEl,"New page");
@@ -1319,7 +1319,7 @@
     var staleActiveInk = !revision && inkActiveRevision && inkActiveRevision !== page.revision;
     var staleInitialInk = !revision && (staleActiveInk || matchingCachedStrokes.length !== strokes.length);
     if (changedRevision || staleInitialInk) {
-      setToolsOpen(false);
+      setActivePanel("");
       hideReply();
       currentStroke = null;
       if (changedRevision) {
@@ -1435,12 +1435,10 @@
     startProgress(requestedIntent);
     var xhr = new XMLHttpRequest();
 
-    function finishError(message) {
+    function finishError(message, preserveReceipt) {
       if (done) return;
       done = true;
-      // A failed/late final Kindle send must not leave the canvas permanently
-      // locked. The strokes remain unsent and can be included in the next send.
-      clearPendingInkSend(liveInkSendId);
+      if (!preserveReceipt) clearPendingInkSend(liveInkSendId);
       setSendBusy(false);
       stopProgress("Could not send annotation");
       showReply(message || "The annotation could not be sent. Your ink is still here.");
@@ -1460,14 +1458,15 @@
       if (xhr.readyState !== 4 || done) return;
       if (xhr.status < 200 || xhr.status >= 300) {
         var errorText = "";
-        try { errorText = JSON.parse(xhr.responseText).error || ""; } catch (error) {}
-        finishError(errorText);
+        var errorCode = "";
+        try { var errorResult = JSON.parse(xhr.responseText); errorText = errorResult.error || ""; errorCode = errorResult.code || ""; } catch (error) {}
+        finishError(errorText, errorCode === "send_in_progress");
         return;
       }
       try {
         var result = useStream ? {
           ok: !(streamTrailer && streamTrailer.error),
-          text: streamText,
+          text: (streamTrailer && streamTrailer.text) || streamText,
           error: streamTrailer && streamTrailer.error,
           retryable: !!(streamTrailer && streamTrailer.retryable),
           inkPreserved: !!(streamTrailer && streamTrailer.inkPreserved),
@@ -1493,8 +1492,8 @@
         finishError(error.message);
       }
     };
-    xhr.onerror = function () { finishError("Network error. Your ink is still here."); };
-    xhr.ontimeout = function () { finishError("Hermes took too long. Your ink is still here."); };
+    xhr.onerror = function () { finishError("Network error. Your ink is still here.", true); };
+    xhr.ontimeout = function () { finishError("Hermes took too long. Your ink is still here.", true); };
     xhr.send(JSON.stringify({
       target: "hermes",
       text: textInstruction,
@@ -1515,20 +1514,18 @@
   add(window, "resize", resizeCanvas);
   add(frameEl, "load", hideMessage);
   add(annotationToggleBtn, "click", function () {
-    closeMenus("pen");
-    if (interactMode) setInteractMode(false);
-    if (drawMode) {
-      setToolsOpen(false);
-      setDrawMode(false);
+    if (surfaceMode === "pen") {
+      setActivePanel("");
+      setSurfaceMode("scroll");
     } else {
-      setDrawMode(true);
-      setToolsOpen(true);
+      setSurfaceMode("pen");
+      setActivePanel("pen");
     }
   });
-  add(hermesToggleBtn, "click", function () { toggleMenu("hermes", hermesToolsEl, hermesToggleBtn); });
-  add(moreToggleBtn, "click", function () { toggleMenu("more", moreToolsEl, moreToggleBtn); });
-  add(interactModeBtn, "click", function () { closeMenus(""); setInteractMode(!interactMode); });
-  add(drawModeBtn, "click", function () { setDrawMode(!drawMode); });
+  add(hermesToggleBtn, "click", function () { togglePanel("hermes"); });
+  add(moreToggleBtn, "click", function () { togglePanel("more"); });
+  add(interactModeBtn, "click", function () { setActivePanel(""); setSurfaceMode(surfaceMode === "interact" ? "scroll" : "interact"); });
+  add(drawModeBtn, "click", function () { setSurfaceMode(surfaceMode === "pen" ? "scroll" : "pen"); });
   add(sendInkBtn, "click", function () { sendInkToHermes(""); });
   add(liveSendBtn, "click", function () { sendInkToHermes(""); });
   add(liveHistoryBtn, "click", openHistory);
@@ -1585,8 +1582,8 @@
 
   loadInk();
   setText(liveThemeBtn, darkMode ? "Light" : "Dark");
-  setDrawMode(false);
-  setToolsOpen(false);
+  setSurfaceMode("scroll");
+  setActivePanel("");
   resizeCanvas();
   loadMetadata(true);
   refreshInkFromServer(true);

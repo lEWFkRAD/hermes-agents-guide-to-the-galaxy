@@ -30,8 +30,8 @@ test("live ink uses the same smooth curve for display and Hermes export", async 
 
 test("live shell cache-busts the current renderer and Journey assets", async () => {
   const html = await fs.readFile(path.join(repoRoot, "public", "live.html"), "utf8");
-  assert.match(html, /live\.css\?v=16/);
-  assert.match(html, /live\.js\?v=37/);
+  assert.match(html, /live\.css\?v=__UI_BUILD_ID__/);
+  assert.match(html, /live\.js\?v=__UI_BUILD_ID__/);
   assert.match(html, /class="labeledTool"/);
   assert.match(html, /id="hermesToggleBtn"/);
   assert.match(html, /id="moreToggleBtn"/);
@@ -70,13 +70,20 @@ test("annotation tools default to a compact Kindle-friendly reading mode", async
   assert.match(html, /id="askSelectionBtn"/);
   assert.match(css, /\.labeledTool::after/);
   assert.doesNotMatch(html, /data-intent=/);
-  assert.match(css, /\.liveBar\s*\{[^}]*position:\s*absolute/s);
-  assert.match(css, /\.toolActions button\s*\{[^}]*width:\s*44px/s);
+  assert.doesNotMatch(css, /\.liveBar\s*\{[^}]*position:\s*absolute/s);
+  assert.doesNotMatch(css, /\.toolActions \.labeledTool\s*\{[^}]*width:\s*108px/s);
   assert.match(css, /\.toolActions svg\s*\{[^}]*stroke:\s*currentColor/s);
-  assert.match(source, /setToolsOpen\(false\);/);
-  assert.match(source, /var drawMode = false/);
-  assert.match(source, /setText\(annotationToggleBtn, drawMode \? "Scroll" : "Pen"\)/);
-  assert.match(source, /if \(drawMode\) \{[\s\S]*setDrawMode\(false\);[\s\S]*setDrawMode\(true\);/);
+  assert.match(source, /var activePanel = ""/);
+  assert.match(source, /function setActivePanel\(name\)/);
+  assert.doesNotMatch(source, /var toolsOpen =/);
+  assert.match(source, /var surfaceMode = "scroll"/);
+  assert.match(source, /function setSurfaceMode\(nextMode\)/);
+  assert.match(source, /surfaceMode === "pen" \? "Scroll" : "Pen"/);
+  assert.doesNotMatch(source, /var drawMode =/);
+  assert.doesNotMatch(source, /var interactMode =/);
+  assert.match(source, /var inkTool = "pen"/);
+  assert.match(source, /function setInkTool\(nextTool\)/);
+  assert.doesNotMatch(source, /var eraserMode =|var lassoMode =|var moveMode/);
   assert.match(source, /pointInPolygon/);
   assert.match(source, /requestClear/);
   assert.doesNotMatch(source, /removeStorage\(/);
@@ -92,23 +99,30 @@ test("Kindle controls use one fixed bottom deck with stable action slots", async
   assert.match(actions, /annotationToggleBtn[\s\S]*interactModeBtn[\s\S]*hermesToggleBtn[\s\S]*liveSendBtn[\s\S]*moreToggleBtn/);
   assert.match(css, /\.liveBar\s*\{[^}]*position:\s*fixed[^}]*bottom:\s*0/s);
   assert.match(css, /grid-template-columns:\s*repeat\(5, minmax\(0, 1fr\)\)/);
-  assert.match(css, /\.annotationDock\s*\{[^}]*position:\s*fixed[^}]*bottom:\s*106px/s);
+  assert.match(css, /\.annotationDock\s*\{[^}]*position:\s*fixed[^}]*bottom:\s*var\(--deck-height\)/s);
+  assert.match(css, /\.annotationDock\s*\{[^}]*top:\s*auto/s);
+  assert.match(css, /\.toolActions \.labeledTool\s*\{[^}]*width:\s*100%/s);
 });
 
-test("server exposes a stable UI build receipt for restart drift checks", async () => {
+test("server computes one UI build receipt from the served CSS and JavaScript", async () => {
   const server = await fs.readFile(path.join(repoRoot, "server.mjs"), "utf8");
-  assert.match(server, /const UI_BUILD_ID = "kindle-controls-v37"/);
+  assert.match(server, /const UI_BUILD_ID = "kindle-" \+ crypto\.createHash\("sha256"\)/);
   assert.match(server, /uiBuildId: UI_BUILD_ID/);
+  assert.match(server, /replace\(\/__UI_BUILD_ID__\/g, UI_BUILD_ID\)/);
 });
 
 test("interactive mode enables scripts without granting the iframe same-origin access", async () => {
   const html = await fs.readFile(path.join(repoRoot, "public", "live.html"), "utf8");
   const source = await fs.readFile(path.join(repoRoot, "public", "live.js"), "utf8");
+  const css = await fs.readFile(path.join(repoRoot, "public", "live.css"), "utf8");
   const server = await fs.readFile(path.join(repoRoot, "server.mjs"), "utf8");
   assert.match(html, /sandbox="allow-same-origin"/);
-  assert.match(source, /setAttribute\("sandbox", "allow-scripts"\)/);
+  assert.match(source, /setAttribute\("sandbox", surfaceMode === "interact" \? "allow-scripts" : "allow-same-origin"\)/);
   assert.doesNotMatch(source, /allow-scripts allow-same-origin/);
   assert.match(source, /interact=1/);
+  assert.match(source, /drawModeBtn\.className = "labeledTool"/);
+  assert.match(css, /body\.interactMode #liveFrame \{ pointer-events: auto; \}/);
+  assert.match(css, /body\.interactMode #liveInk \{ pointer-events: none; \}/);
   assert.match(server, /script-src 'unsafe-inline'/);
   assert.match(server, /connect-src 'none'/);
 });
@@ -148,7 +162,7 @@ test("only a genuinely changed HTML revision clears visible ink and closes UI", 
   );
 
   assert.match(opener, /var changedRevision = !!revision && page\.revision !== revision/);
-  assert.match(opener, /if \(changedRevision \|\| staleInitialInk\) \{[\s\S]*setToolsOpen\(false\)[\s\S]*hideReply\(\)[\s\S]*strokes = \[\]/);
+  assert.match(opener, /if \(changedRevision \|\| staleInitialInk\) \{[\s\S]*setActivePanel\(""\)[\s\S]*hideReply\(\)[\s\S]*strokes = \[\]/);
   assert.match(source, /strokes = matchingRevisionStrokes\(applyPendingOperations\(serverInkStrokes, storedInkOperations\(\)\), revision\)/);
   assert.match(opener, /serverInkStrokes = \[\]/);
   assert.match(opener, /pendingInkSnapshot = null/);
@@ -222,13 +236,16 @@ test("lost send responses reuse the persisted claim without deleting visible ink
   assert.doesNotMatch(sender, /queueInkOperation\("delete", \{ ids: pendingIds \}\)/);
 });
 
-test("a reload releases a stale pending-send UI lock without deleting ink", async () => {
+test("a reload preserves delivery identity without using it as a UI lock", async () => {
   const source = await fs.readFile(path.join(repoRoot, "public", "live.js"), "utf8");
   const loadStart = source.indexOf("function loadInk");
   const loader = source.slice(loadStart, source.indexOf("\n  function ", loadStart + 20));
   assert.match(loader, /pendingInkSend = readPendingInkSend\(\)/);
-  assert.match(loader, /if \(pendingInkSend\) clearPendingInkSend\(pendingInkSend\.id\)/);
+  assert.doesNotMatch(loader, /clearPendingInkSend/);
   assert.doesNotMatch(loader, /strokes = \[\]/);
+  assert.match(source, /if \(surfaceMode !== "pen" \|\| sendBusy\) return true/);
+  assert.doesNotMatch(source, /surfaceMode !== "pen" \|\| sendBusy \|\| pendingInkSend/);
+  assert.match(source, /xhr\.ontimeout = function \(\) \{ finishError\([^;]+, true\); \}/);
 });
 
 test("new page preserves active work until the replacement page succeeds", async () => {

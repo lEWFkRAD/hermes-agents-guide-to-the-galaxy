@@ -5,6 +5,7 @@
   --line: #aaa395;
   --soft: #eee9dc;
   --muted: #625b4e;
+  --deck-height: 106px;
 }
 
 html.dark {
@@ -41,25 +42,7 @@ button { font: inherit; }
   background: var(--paper);
 }
 
-.liveBar {
-  position: absolute;
-  z-index: 8;
-  top: 0;
-  top: env(safe-area-inset-top, 0);
-  left: 0;
-  right: 0;
-  padding: 8px;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-  pointer-events: none;
-}
-.liveIdentity { display: flex; flex-direction: column; padding: 5px 7px; background: var(--paper); border: 1px solid var(--line); pointer-events: auto; }
-.liveIdentity span { color: var(--muted); font: 12px/1.2 Arial, sans-serif; }
-.liveActions { display: flex; align-items: flex-start; gap: 5px; pointer-events: auto; }
-.liveActions > button,
-.liveHistory button { min-height: 44px; padding: 5px 9px; border: 2px solid var(--ink); border-radius: 4px; background: var(--paper); color: var(--ink); font: 700 13px/1.1 Arial, sans-serif; }
+.liveHistory button { min-height: 44px; padding: 5px 9px; border: 2px solid var(--ink); background: var(--paper); color: var(--ink); font: 700 13px/1.1 Arial, sans-serif; }
 
 .visuallyHidden {
   position: absolute !important;
@@ -73,73 +56,19 @@ button { font: inherit; }
   border: 0;
 }
 
-.annotationDock {
-  display: flex;
-  flex-direction: row-reverse;
-  align-items: flex-start;
-  gap: 6px;
-  pointer-events: auto;
-}
-
-.annotationToggle,
 .annotationTools button,
 .liveReply button {
   min-height: 44px;
   padding: 5px 9px;
   border: 2px solid var(--ink);
-  border-radius: 4px;
   background: var(--paper);
   color: var(--ink);
   font: 700 13px/1.1 Arial, sans-serif;
-}
-
-.annotationToggle {
-  width: 46px;
-  min-width: 46px;
-  height: 46px;
-  padding: 0;
-  border-radius: 6px;
-  box-shadow: 0 2px 0 rgba(0, 0, 0, .22);
-  font-size: 24px;
-  line-height: 1;
 }
 .liveHistory { position: absolute; inset: 0; z-index: 20; overflow: auto; padding: 12px; background: var(--paper); color: var(--ink); }
 .liveHistory header { position: sticky; top: 0; display: flex; justify-content: space-between; align-items: center; padding: 8px 0; background: var(--paper); border-bottom: 2px solid var(--ink); }
 .historyItem { display: block; width: 100%; margin: 8px 0; padding: 12px; text-align: left; border: 1px solid var(--line); background: var(--soft); color: var(--ink); }
 .historyMessage { padding: 10px 0; border-bottom: 1px solid var(--line); white-space: pre-wrap; }
-
-body.toolsOpen .annotationToggle,
-.annotationToggle:focus {
-  background: var(--ink);
-  color: var(--paper);
-}
-
-.annotationTools {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  max-width: calc(100vw - 68px);
-  padding: 5px;
-  border: 2px solid var(--ink);
-  border-radius: 6px;
-  background: var(--soft);
-  box-shadow: 0 2px 0 rgba(0, 0, 0, .22);
-  gap: 5px;
-}
-
-.toolActions,
-.intentActions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 4px;
-}
-
-.toolActions button {
-  width: 44px;
-  min-width: 44px;
-  height: 44px;
-  padding: 0;
-}
 
 .toolActions svg {
   display: block;
@@ -153,17 +82,6 @@ body.toolsOpen .annotationToggle,
   stroke-linejoin: round;
 }
 
-.intentActions {
-  padding-top: 5px;
-  border-top: 1px solid var(--line);
-}
-
-.annotationTools .intentBtn {
-  min-width: 54px;
-  min-height: 36px;
-  padding: 4px 7px;
-}
-
 .annotationTools button.active {
   background: var(--ink);
   color: var(--paper);
@@ -175,27 +93,16 @@ button:focus {
 }
 
 button:disabled { opacity: .42; }
-.pillMenu { position:absolute; top:60px; right:8px; display:flex; flex-direction:column; gap:5px; min-width:170px; padding:7px; border:2px solid var(--ink); background:var(--soft); }
 .pillMenu button { min-height:44px; text-align:left; }
 .selectedInk { stroke-width: 7 !important; stroke-dasharray: 8 5; opacity:.8; }
 .emptyHint { position:absolute; left:12%; right:12%; top:44%; z-index:3; color:var(--muted); text-align:center; font:18px/1.4 Arial,sans-serif; pointer-events:none; }
-.liveBar { min-width:0; }
-.liveIdentity { flex:0 1 150px; min-width:82px; overflow:hidden; }
 .liveIdentity strong,.liveIdentity span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.liveActions { flex:0 0 auto; }
-.menuPill { min-width:58px; }
-.annotationDock { position:absolute; top:60px; right:8px; }
-.annotationTools { max-width:240px; }
-.intentActions { display:none; }
-@media (max-width: 540px) { .liveIdentity span{display:none}.liveActions{gap:3px}.liveActions>button{padding:4px 7px}.menuPill{min-width:48px}.liveIdentity{flex-basis:72px} }
-.annotationTools { max-width: 250px; }
-.toolActions .labeledTool { width: 108px; display:flex; align-items:center; justify-content:flex-start; gap:7px; padding:0 8px; }
+.toolActions .labeledTool { display:flex; align-items:center; justify-content:flex-start; gap:7px; padding:0 8px; }
 .toolActions .labeledTool svg { width:20px; height:20px; margin:0; flex:0 0 auto; }
 .toolActions .labeledTool::after { content:attr(title); font:700 12px/1 Arial,sans-serif; }
 /* Flat e-ink controls: contrast communicates state, never depth. */
 button { -webkit-appearance:none; appearance:none; box-shadow:none !important; text-shadow:none; border-radius:0 !important; }
 .liveIdentity,.annotationTools,.pillMenu,.liveReply,.liveHistory,.historyItem { box-shadow:none !important; border-radius:0 !important; background:var(--paper); }
-.annotationToggle { box-shadow:none !important; border-radius:0 !important; }
 .annotationTools button.active,.menuPill[aria-expanded="true"] { background:var(--ink); color:var(--paper); }
 #hermesTools { min-width:0; flex-direction:row; padding:4px; gap:4px; }
 #hermesTools .cornerIcon { width:44px; min-width:44px; height:44px; padding:0; display:flex; align-items:center; justify-content:center; border:1px solid var(--ink); background:var(--paper); color:var(--ink); font:700 22px/1 Arial,sans-serif; }
@@ -247,13 +154,16 @@ button { -webkit-appearance:none; appearance:none; box-shadow:none !important; t
   -webkit-touch-callout: none;
 }
 
-body.viewMode .livingSurface {
+body.viewMode .livingSurface,
+body.interactMode .livingSurface {
   touch-action: auto;
   -ms-touch-action: auto;
 }
 
-body.viewMode #liveFrame { pointer-events: auto; }
-body.viewMode #liveInk { pointer-events: none; }
+body.viewMode #liveFrame,
+body.interactMode #liveFrame { pointer-events: auto; }
+body.viewMode #liveInk,
+body.interactMode #liveInk { pointer-events: none; }
 
 .liveMessage {
   position: absolute;
@@ -303,42 +213,8 @@ body.viewMode #liveInk { pointer-events: none; }
   white-space: pre-wrap;
   font: 15px/1.4 Arial, sans-serif;
 }
-@media (max-width: 470px) {
-  .liveBar { padding: 5px; }
-  .annotationDock { gap: 4px; }
-  .annotationToggle {
-    width: 44px;
-    min-width: 44px;
-    height: 44px;
-  }
-  .annotationTools {
-    max-width: calc(100vw - 57px);
-    padding: 4px;
-    gap: 4px;
-  }
-  .toolActions,
-  .intentActions {
-    gap: 3px;
-  }
-  .toolActions button {
-    width: 42px;
-    min-width: 42px;
-    height: 42px;
-  }
-  .toolActions svg {
-    width: 20px;
-    height: 20px;
-  }
-  .annotationTools .intentBtn {
-    min-width: 46px;
-    padding-left: 5px;
-    padding-right: 5px;
-    font-size: 12px;
-  }
-}
-
-/* Kindle control deck v2: every primary action has a permanent position. */
-.liveShell { padding-bottom: 106px; }
+/* Kindle control deck: every primary action has a permanent position. */
+.liveShell { padding-bottom: var(--deck-height); }
 .liveBar {
   position: fixed;
   z-index: 30;
@@ -398,7 +274,8 @@ body.interactMode #interactModeBtn { background: var(--ink); color: var(--paper)
   z-index: 31;
   left: 0;
   right: 0;
-  bottom: 106px;
+  bottom: var(--deck-height);
+  top: auto;
   display: block;
   pointer-events: none;
 }
@@ -406,6 +283,7 @@ body.interactMode #interactModeBtn { background: var(--ink); color: var(--paper)
 .pillMenu {
   position: static;
   width: 100%;
+  max-width: none;
   min-width: 0;
   max-height: 190px;
   overflow-y: auto;
@@ -416,7 +294,6 @@ body.interactMode #interactModeBtn { background: var(--ink); color: var(--paper)
   background: var(--paper);
   pointer-events: auto;
 }
-.annotationTools[hidden], .pillMenu[hidden] { display: none !important; }
 .toolActions {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -433,14 +310,13 @@ body.interactMode #interactModeBtn { background: var(--ink); color: var(--paper)
   color: var(--ink);
   font: 700 12px/1.1 Arial, sans-serif;
 }
+.toolActions .labeledTool { width: 100%; min-width: 0; }
 .pillMenu { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 #hermesTools { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 #hermesTools .cornerIcon { width: 100%; min-width: 0; height: 54px; }
-.liveReply { bottom: 106px; max-height: 44%; }
+.liveReply { bottom: var(--deck-height); max-height: 44%; }
 @media (max-width: 470px) {
-  .liveShell { padding-bottom: 98px; }
+  :root { --deck-height: 98px; }
   .liveIdentity { height: 32px; }
   .liveActions > button, .liveActions .menuPill { height: 64px; min-height: 64px; font-size: 12px; }
-  .annotationDock { bottom: 98px; }
-  .liveReply { bottom: 98px; }
 }

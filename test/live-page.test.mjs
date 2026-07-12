@@ -29,6 +29,7 @@ test("creates one default living HTML document and exposes metadata separately",
   await withStore(async store => {
     const metadata = store.metadata();
     assert.equal(metadata.version, 2);
+    assert.equal(Object.hasOwn(metadata, "interactive"), false);
     assert.equal(metadata.title, "Blank page");
     assert.equal(metadata.updatedAt, null);
     assert.equal(Object.hasOwn(metadata, "html"), false);
@@ -95,6 +96,15 @@ test("sanitizes active content and external requests while preserving expressive
   assert.match(safe, /Content-Security-Policy/);
   assert.doesNotMatch(safe, /<script|<iframe|<form|<input|<button|<link/i);
   assert.doesNotMatch(safe, /onload|javascript:|https:\/\/example\.com|@import/i);
+});
+
+test("trusted interactive pages preserve local controls while stripping external capabilities", () => {
+  const source = `<!doctype html><html><body><button id="go" onclick="document.body.dataset.done='1'">Go</button><script>document.body.dataset.ready='1'</script><iframe src="https://example.com"></iframe><a href="https://example.com">remote</a></body></html>`;
+  const safe = sanitizeLivingHtml(source, { interactive: true });
+  assert.match(safe, /<button[^>]*onclick=/i);
+  assert.match(safe, /<script>/i);
+  assert.match(safe, /script-src 'unsafe-inline'/);
+  assert.doesNotMatch(safe, /<iframe|https:\/\/example\.com/i);
 });
 
 test("rejects an invalid publish without replacing the previous document", async () => {

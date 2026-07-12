@@ -84,6 +84,136 @@ async function startServer(options = {}) {
   };
 }
 
+async function uiBuildReceipt(port) {
+  const config = JSON.parse((await request(port, "/api/config")).body);
+  const shell = await request(port, "/live");
+  assert.equal(shell.status, 200);
+  assert.match(shell.body, new RegExp(`live\\.css\\?v=${config.uiBuildId}`));
+  assert.match(shell.body, new RegExp(`live\\.js\\?v=${config.uiBuildId}`));
+  const css = await request(port, `/live.css?v=${config.uiBuildId}`);
+  const js = await request(port, `/live.js?v=${config.uiBuildId}`);
+  const expected = "kindle-" + crypto.createHash("sha256").update(Buffer.concat([Buffer.from(css.body), Buffer.from(js.body)])).digest("hex").slice(0, 16);
+  assert.equal(config.uiBuildId, expected);
+  return config.uiBuildId;
+}
+
+test("UI build receipt identifies the served assets across a restart", async () => {
+  const first = await startServer();
+  const dataDir = first.dataDir;
+  try {
+    const before = await uiBuildReceipt(first.port);
+    await first.close({ cleanup: false });
+    const second = await startServer({ dataDir });
+    try {
+      assert.equal(await uiBuildReceipt(second.port), before);
+    } finally {
+      await second.close({ cleanup: false });
+    }
+  } finally {
+    await fs.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("/api/send relays Kindle snapshots before the final adapter frame and trailers canonical text", async () => {
+  let adapterBody = "";
+  let adapterAccept = "";
+  let adapterResponse = null;
+  let finalReleased = false;
+  const releaseFinal = () => {
+    if (!adapterResponse || finalReleased) return;
+    finalReleased = true;
+    adapterResponse.write(JSON.stringify({ type: "snapshot", text: "Hermes is working.", final: true }) + "\n");
+    adapterResponse.end();
+  };
+  const adapter = http.createServer((req, res) => {
+    adapterAccept = String(req.headers.accept || "");
+    req.setEncoding("utf8");
+    req.on("data", chunk => { adapterBody += chunk; });
+    req.on("end", () => {
+      adapterResponse = res;
+      res.writeHead(200, { "content-type": "application/x-ndjson" });
+      // The live Windows gateway can surface its cursor with these mojibake
+      // code points; the bridge must remove it before suffix reconciliation.
+      res.write(JSON.stringify({ type: "snapshot", text: "Hermes is \u00e2\u2013\u2030", final: false }) + "\n");
+    });
+  });
+  await new Promise((resolve, reject) => {
+    adapter.once("error", reject);
+    adapter.listen(0, "127.0.0.1", resolve);
+  });
+
+  const adapterPort = adapter.address().port;
+  const server = await startServer({ kindleAdapterUrl: `http://127.0.0.1:${adapterPort}/ingest` });
+  let earlyRelayResolve;
+  const earlyRelay = new Promise(resolve => { earlyRelayResolve = resolve; });
+  let observed = "";
+  const responsePromise = new Promise((resolve, reject) => {
+    const body = JSON.stringify({
+      target: "hermes",
+      text: "Show streaming.",
+      stream: true,
+      hermesThreadId: "thread-stream-proof"
+    });
+    const req = http.request({
+      hostname: "127.0.0.1",
+      port: server.port,
+      path: "/api/send",
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "content-length": Buffer.byteLength(body),
+        "x-diary-auth": "local-secret"
+      }
+    }, res => {
+      res.setEncoding("utf8");
+      res.on("data", chunk => {
+        observed += chunk;
+        if (observed.includes("Hermes is")) earlyRelayResolve();
+      });
+      res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, body: observed }));
+    });
+    req.on("error", reject);
+    req.end(body);
+  });
+
+  try {
+    let relayTimeout;
+    try {
+      await Promise.race([
+        earlyRelay,
+        new Promise((_, reject) => {
+          relayTimeout = setTimeout(() => reject(new Error("early Kindle snapshot was not relayed")), 2000);
+        })
+      ]);
+    } finally {
+      clearTimeout(relayTimeout);
+    }
+    assert.equal(finalReleased, false);
+    assert.match(observed, /Hermes is$/);
+    assert.doesNotMatch(observed, /Hermes is working\./);
+
+    releaseFinal();
+    const response = await responsePromise;
+    assert.equal(response.status, 200);
+    assert.match(adapterAccept, /application\/x-ndjson/);
+    assert.equal(JSON.parse(adapterBody).stream, true);
+
+    const trailerAt = response.body.indexOf("\u001e");
+    assert.ok(trailerAt > 0, "stream response must contain a canonical trailer");
+    const streamed = response.body.slice(0, trailerAt);
+    const metadataEnd = streamed.indexOf("\n");
+    const metadata = JSON.parse(streamed.slice(0, metadataEnd));
+    assert.equal(metadata.hermesThreadId, "thread-stream-proof");
+    assert.equal(streamed.slice(metadataEnd + 1), "Hermes is working.");
+    const trailer = JSON.parse(response.body.slice(trailerAt + 1));
+    assert.equal(trailer.text, "Hermes is working.");
+  } finally {
+    releaseFinal();
+    await server.close();
+    await new Promise(resolve => adapter.close(resolve));
+  }
+});
+
 test("Living HTML API enforces boundaries and serves only sanitized sandbox content", async () => {
   const server = await startServer();
   try {
@@ -122,7 +252,18 @@ test("Living HTML API enforces boundaries and serves only sanitized sandbox cont
     assert.equal(content.status, 200);
     assert.match(content.headers["content-security-policy"], /script-src 'none'/);
     assert.match(content.body, /Version two/);
-    assert.doesNotMatch(content.body, /onclick|<script/i);
+    assert.match(content.body, /onclick|<script/i);
+
+    const interactiveContent = await request(server.port, "/api/live-page/content?interact=1", {
+      headers: { "x-diary-auth": "local-secret" }
+    });
+    assert.equal(interactiveContent.status, 200);
+    assert.match(interactiveContent.headers["content-security-policy"], /script-src 'unsafe-inline'/);
+    assert.notEqual(interactiveContent.headers.etag, content.headers.etag);
+    const wrongModeEtag = await request(server.port, "/api/live-page/content?interact=1", {
+      headers: { "x-diary-auth": "local-secret", "if-none-match": content.headers.etag }
+    });
+    assert.equal(wrongModeEtag.status, 200);
 
     const unchanged = await request(server.port, "/api/live-page", {
       headers: { "x-diary-auth": "local-secret", "if-none-match": `"${publishedPage.revision}"` }
@@ -472,7 +613,7 @@ test("a failed Journey preflight cannot expose new HTML with old ink", async () 
     const nextInput = {
       html: "<!doctype html><html><head><title>Must not leak</title></head><body><h1>Destination B</h1></body></html>"
     };
-    const next = preparedPage(nextInput);
+    const next = preparedPage({ ...nextInput, interactive: true });
     const blocker = path.join(server.dataDir, "live-page-history", next.revision.slice("sha256:".length) + ".html");
     await fs.mkdir(blocker, { recursive: true });
 
