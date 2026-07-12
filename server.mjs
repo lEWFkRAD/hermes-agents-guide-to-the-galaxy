@@ -387,13 +387,16 @@ function stripNotebookTags(text) {
   return String(text || "").replace(/(^|[\s([{])#([A-Za-z][A-Za-z0-9_-]{1,31})\b/g, "$1").replace(/[ \t]{2,}/g, " ").trim();
 }
 
-function formatKindleContext({ intent = "", tags = [], rawTranscription = "", cleanedTranscription = "", source = "" } = {}) {
+function formatKindleContext({ intent = "", tags = [], rawTranscription = "", cleanedTranscription = "", ocrAlternatives = [], ocrConfidence = 1, source = "" } = {}) {
   const lines = [];
   if (intent && KINDLE_INTENTS.has(intent)) lines.push(`Intent: ${intent}. ${KINDLE_INTENTS.get(intent)}`);
   if (tags.length) lines.push(`Notebook tags: ${tags.map(tag => "#" + tag).join(", ")}.`);
   if (source === "live-page") lines.push("Source: this message was handwritten over the current Live Page.");
   if (rawTranscription && cleanedTranscription && rawTranscription !== cleanedTranscription) {
     lines.push(`OCR uncertainty: raw transcription was ${JSON.stringify(rawTranscription)}; cleaned transcription was ${JSON.stringify(cleanedTranscription)}. If a name, date, dollar amount, or command depends on this difference, say what is uncertain and give the likely alternative.`);
+  }
+  if (ocrAlternatives.length || ocrConfidence < 0.8) {
+    lines.push(`Handwriting confidence: ${ocrConfidence.toFixed(2)}. Alternatives: ${ocrAlternatives.length ? ocrAlternatives.map(value => JSON.stringify(value)).join(", ") : "none supplied"}. Treat the cleaned transcription as a likely reading, not a literal command. Resolve obvious conversational language from context. Before a broad file, session, database, or web search based on an uncertain term, ask one short clarification question.`);
   }
   return lines.length ? `[Kindle note context]\n${lines.join("\n")}\n[/Kindle note context]\n\n` : "";
 }
@@ -541,7 +544,8 @@ async function cleanHandwritingTranscription(rawText) {
             "Return only the corrected transcription, with no preface or quotation marks.",
             "Make the smallest defensible corrections to spacing, capitalization, and likely proper names.",
             "Do not answer the note and do not add facts. If a name, date, dollar amount, or command is uncertain, preserve the original wording and add bracketed alternatives inline, for example [possibly: ...].",
-            "Firm vocabulary includes Bearden, Hermes, Onyx, Jameson Bearden, client, engagement, tax, and audit."
+            "Firm and notebook vocabulary includes Bearden, Hermes, Onyx, Jameson Bearden, client, engagement, tax, audit, D&D, Dungeons & Dragons, campaign, character, and game.",
+            "In game-related wording, OCR forms such as DTD, D and D, or D + D usually mean D&D."
           ].join(" ")
         },
         { role: "user", content: rawText }
@@ -709,6 +713,72 @@ function requestOriginOk(req) {
   } catch {
     return false;
   }
+}
+
+async function reconcileHandwritingReadings(readings) {
+  const usable = readings.map(value => String(value || "").trim()).filter(Boolean);
+  if (!usable.length) return { text: "", alternatives: [], confidence: 0 };
+  if (usable.length === 1) {
+    const text = normalizeKindleTranscription(await cleanHandwritingTranscription(usable[0]).catch(() => usable[0]));
+    return calibrateHandwritingResult({ text, alternatives: [], confidence: 0.65 }, usable);
+  }
+  const response = await fetch(ocrCleanupEndpoint, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      model: ocrCleanupModel,
+      temperature: 0,
+      max_tokens: 260,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: "Reconcile independent Kindle handwriting readings. Return JSON only: {\"text\":\"best complete transcription\",\"alternatives\":[\"plausible complete alternative\"],\"confidence\":0.0}. Preserve meaning and word spacing. Prefer ordinary conversational language. Do not answer the note. DTD/D and D near game, campaign, character, or session usually means D&D. Confidence must be 0 to 1."
+        },
+        { role: "user", content: JSON.stringify({ readings: usable }) }
+      ]
+    })
+  });
+  const raw = await response.text();
+  if (!response.ok) throw new Error(`OCR reconciliation returned ${response.status}`);
+  const envelope = JSON.parse(raw);
+  const content = choiceText(envelope);
+  const parsed = JSON.parse(content.replace(/^```json\s*|\s*```$/g, ""));
+  const text = normalizeKindleTranscription(parsed.text || usable[0]);
+  const alternatives = Array.isArray(parsed.alternatives)
+    ? parsed.alternatives.map(normalizeKindleTranscription).filter(value => value && value !== text).slice(0, 3)
+    : [];
+  const confidence = Math.max(0, Math.min(1, Number(parsed.confidence) || 0.5));
+  return calibrateHandwritingResult({ text, alternatives, confidence }, usable);
+}
+
+function normalizeKindleTranscription(text) {
+  return String(text || "")
+    .replace(/\bD\s*T\s*D(?=\s+(?:game|campaign|character|session)\b)/gi, "D&D")
+    .replace(/\bD\s+(?:and|\+)\s+D(?=\s+(?:game|campaign|character|session)\b)/gi, "D&D")
+    .trim();
+}
+
+function unwrapVisionTranscription(text) {
+  const value = String(text || "").trim();
+  const quoted = value.match(/^You wrote:\s*["“]([^"”\n]+)["”]/i);
+  return (quoted?.[1] || value).trim();
+}
+
+function calibrateHandwritingResult(result, readings) {
+  const normalizedReadings = readings.map(unwrapVisionTranscription).filter(Boolean);
+  let text = normalizeKindleTranscription(result.text || normalizedReadings[0] || "");
+  const alternatives = Array.isArray(result.alternatives) ? result.alternatives.map(normalizeKindleTranscription) : [];
+  let confidence = Math.min(0.82, Math.max(0, Number(result.confidence) || 0.5));
+  // A handwritten ampersand is commonly read as B, 6, or T. Preserve that
+  // ambiguity rather than allowing correlated passes to create false certainty.
+  if (/\bD[B6T]D(?=\s+(?:game|campaign|character|session)\b)/i.test(text)) {
+    const literal = text;
+    text = text.replace(/\bD[B6T]D(?=\s+(?:game|campaign|character|session)\b)/gi, "D&D");
+    alternatives.unshift(literal, literal.replace(/\bDBD\b/i, "Dead by Daylight"));
+    confidence = Math.min(confidence, 0.55);
+  }
+  return { text, alternatives: [...new Set(alternatives.filter(value => value && value !== text))].slice(0, 3), confidence };
 }
 
 function fullPageMetadata(fullPage) {
@@ -1282,6 +1352,8 @@ async function handleSend(req, res) {
       let noteText = body.text || "";
       let rawTranscription = "";
       let cleanedTranscription = "";
+      let ocrAlternatives = [];
+      let ocrConfidence = 1;
       if (hasInk) {
         try {
           const vis = await callChat({
@@ -1298,22 +1370,77 @@ async function handleSend(req, res) {
           const quotedTranscription = visionOutput.match(/^You wrote:\s*["“]([^"”\n]+)["”]/i);
           rawTranscription = (quotedTranscription?.[1] || visionOutput).trim();
           let cleaned = rawTranscription;
-          if (rawTranscription && !isLivePageSource) {
+          if (rawTranscription) {
             try { cleaned = await cleanHandwritingTranscription(rawTranscription); } catch {}
           }
-          cleanedTranscription = cleaned;
-          noteText = (noteText ? noteText + "\n\n" : "") + cleaned;
-        } catch {
-          /* fall through with whatever text we have */
+          cleaned = normalizeKindleTranscription(cleaned);
+          const secondVision = await callChat({
+            endpoint: defaultVisionEndpoint,
+            model: defaultVisionModel,
+            token: "",
+            text: "Independently transcribe this handwriting as ordinary conversational language. Pay special attention to short words, acronyms, ampersands, names, punctuation, and spaces between words. Output only your best complete reading. Do not answer the note.",
+            imageDataUrl: body.imageDataUrl,
+            mode: "vision"
+          });
+          const secondReading = (secondVision.text || "").trim();
+          const readings = [rawTranscription, secondReading].filter(Boolean);
+          let reconciled;
+          try { reconciled = await reconcileHandwritingReadings(readings); }
+          catch { reconciled = calibrateHandwritingResult({ text: cleaned, alternatives: secondReading && secondReading !== cleaned ? [secondReading] : [], confidence: secondReading === rawTranscription ? 0.82 : 0.55 }, readings); }
+          cleanedTranscription = reconciled.text;
+          ocrAlternatives = reconciled.alternatives;
+          ocrConfidence = reconciled.confidence;
+          noteText = (noteText ? noteText + "\n\n" : "") + cleanedTranscription;
+          logSend({ kind: "ocr_result", readings, cleanedTranscription, ocrAlternatives, ocrConfidence, imageBytes });
+        } catch (error) {
+          logSend({
+            kind: "ocr_error",
+            target: "hermes",
+            endpoint: defaultVisionEndpoint,
+            model: defaultVisionModel,
+            error: error instanceof Error ? error.message : String(error)
+          });
         }
       }
+      if (hasInk && !noteText.trim()) {
+        if (liveInkClaimId) {
+          await withLiveState(() => liveInkStore.releaseSend(liveInkClaimId)).catch(() => {});
+        }
+        const emsg = "I couldn't read that handwriting because the vision service is unavailable. Your ink is still here—tap Send to retry.";
+        logSend({
+          kind: "ocr_blocked_send",
+          target: "hermes",
+          endpoint: defaultVisionEndpoint,
+          model: defaultVisionModel,
+          imageBytes
+        });
+        if (body.stream) {
+          res.writeHead(200, {
+            "content-type": "text/plain; charset=utf-8",
+            "cache-control": "no-store",
+            "access-control-allow-origin": "*"
+          });
+          res.write(JSON.stringify({ sessionId: session.id, hermesThreadId: session.channelThreadId }) + "\n");
+          res.write(RS + JSON.stringify({ error: emsg, retryable: true, inkPreserved: true }));
+          res.end();
+        } else {
+          send(res, 503, JSON.stringify({ ok: false, error: emsg, retryable: true, inkPreserved: true }));
+        }
+        return;
+      }
       const tags = extractNotebookTags(noteText);
+      const ocrNeedsClarification = hasInk && ocrConfidence < 0.65 && ocrAlternatives.length > 0;
+      const clarificationText = ocrNeedsClarification
+        ? `I read that as ${JSON.stringify(cleanedTranscription)}, but the handwriting is ambiguous. Did you mean ${[cleanedTranscription, ...ocrAlternatives].slice(0, 3).map(value => JSON.stringify(value)).join(" or ")}?`
+        : "";
       noteText = stripNotebookTags(noteText);
       noteText = formatKindleContext({
         intent,
         tags,
         rawTranscription,
         cleanedTranscription,
+        ocrAlternatives,
+        ocrConfidence,
         source: isLivePageSource ? "live-page" : ""
       }) + livePageContext + formatLiveDomAnchors(liveDomAnchors) + noteText;
 
@@ -1333,13 +1460,14 @@ async function handleSend(req, res) {
       // identify itself as the Live Page.
       const beforeLiveRevision = await withLiveState(() => livePageStore.metadata().revision);
       try {
-        result = await callKindleChannel({
+        result = ocrNeedsClarification ? { text: clarificationText } : await callKindleChannel({
           text: noteText,
           chatId: session.channelThreadId,
           source: isLivePageSource ? "live-page" : "",
           baseRevision: livePageRevision,
           currentRevision: beforeLiveRevision
         });
+        if (ocrNeedsClarification) logSend({ kind: "ocr_clarification", cleanedTranscription, ocrAlternatives, ocrConfidence });
       } catch (error) {
         if (liveInkClaimId) await withLiveState(() => liveInkStore.releaseSend(liveInkClaimId)).catch(() => {});
         logSend({ kind: "error", target: "hermes", channel: true, error: error.message });

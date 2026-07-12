@@ -21,13 +21,17 @@ test("live ink uses the same smooth curve for display and Hermes export", async 
   assert.match(pathRenderer, /path\.push\(\s*"Q"/);
   assert.match(exporter, /smoothedStrokePoints\(selected\[i\]\.points/);
   assert.match(exporter, /outInk\.quadraticCurveTo\(/);
+  assert.match(exporter, /var minX = 1, minY = 1, maxX = 0, maxY = 0/);
+  assert.match(exporter, /Math\.min\(4, Math\.max\(2, 1800/);
+  assert.match(exporter, /toDataURL\("image\/png"\)/);
+  assert.doesNotMatch(exporter, /image\/jpeg/);
   assert.doesNotMatch(pathRenderer, /for \([^)]*\)[^{]*path\.push\("L"/);
 });
 
 test("live shell cache-busts the current renderer and Journey assets", async () => {
   const html = await fs.readFile(path.join(repoRoot, "public", "live.html"), "utf8");
   assert.match(html, /live\.css\?v=15/);
-  assert.match(html, /live\.js\?v=31/);
+  assert.match(html, /live\.js\?v=32/);
   assert.match(html, /class="labeledTool"/);
   assert.match(html, /id="hermesToggleBtn"/);
   assert.match(html, /id="moreToggleBtn"/);
@@ -213,4 +217,41 @@ test("streamed live annotations are claimed before Hermes runs", async () => {
   assert.match(claimGate, /liveInkSendId && liveInkStrokeIds\.length/);
   assert.doesNotMatch(claimGate, /!body\.stream/);
   assert.match(claimGate, /liveInkStore\.claimSend/);
+});
+
+test("handwritten sends fail closed when OCR is unavailable", async () => {
+  const serverSource = await fs.readFile(path.join(repoRoot, "server.mjs"), "utf8");
+
+  assert.match(serverSource, /kind:\s*"ocr_error"/);
+  assert.match(serverSource, /kind:\s*"ocr_blocked_send"/);
+  assert.match(serverSource, /liveInkStore\.releaseSend\(liveInkClaimId\)/);
+  assert.match(serverSource, /vision service is unavailable/);
+  assert.match(serverSource, /inkPreserved:\s*true/);
+});
+
+test("live page surfaces streamed error trailers instead of reporting success", async () => {
+  const liveSource = await fs.readFile(path.join(repoRoot, "public", "live.js"), "utf8");
+
+  assert.match(liveSource, /ok:\s*!\(streamTrailer\s*&&\s*streamTrailer\.error\)/);
+  assert.match(liveSource, /error:\s*streamTrailer\s*&&\s*streamTrailer\.error/);
+  assert.match(liveSource, /inkPreserved:\s*!!\(streamTrailer\s*&&\s*streamTrailer\.inkPreserved\)/);
+});
+
+test("live-page handwriting is cleaned and game shorthand is normalized", async () => {
+  const serverSource = await fs.readFile(path.join(repoRoot, "server.mjs"), "utf8");
+
+  assert.match(serverSource, /if \(rawTranscription\) \{/);
+  assert.match(serverSource, /normalizeKindleTranscription\(cleaned\)/);
+  assert.match(serverSource, /D\\s\*T\\s\*D/);
+  assert.match(serverSource, /Dungeons & Dragons/);
+  assert.match(serverSource, /reconcileHandwritingReadings\(readings\)/);
+  assert.match(serverSource, /kind:\s*"ocr_result"/);
+  assert.match(serverSource, /Before a broad file, session, database, or web search/);
+  assert.match(serverSource, /function calibrateHandwritingResult/);
+  assert.match(serverSource, /Math\.min\(0\.82/);
+  assert.match(serverSource, /D\[B6T\]D/);
+  assert.match(serverSource, /confidence = Math\.min\(confidence, 0\.55\)/);
+  assert.match(serverSource, /ocrConfidence < 0\.65 && ocrAlternatives\.length > 0/);
+  assert.match(serverSource, /ocrNeedsClarification \? \{ text: clarificationText \} : await callKindleChannel/);
+  assert.match(serverSource, /kind:\s*"ocr_clarification"/);
 });

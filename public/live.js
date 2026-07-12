@@ -711,12 +711,29 @@
     if (!selected || !selected.length) return "";
     var width = Math.max(1, canvasEl.width);
     var height = Math.max(1, canvasEl.height);
-    var scale = Math.min(1, 900 / Math.max(width, height));
+    var minX = 1, minY = 1, maxX = 0, maxY = 0, hasPoints = false;
+    for (var boundIndex = 0; boundIndex < selected.length; boundIndex += 1) {
+      var boundPoints = selected[boundIndex].points || [];
+      for (var boundPointIndex = 0; boundPointIndex < boundPoints.length; boundPointIndex += 1) {
+        var boundPoint = boundPoints[boundPointIndex];
+        minX = Math.min(minX, boundPoint.x); minY = Math.min(minY, boundPoint.y);
+        maxX = Math.max(maxX, boundPoint.x); maxY = Math.max(maxY, boundPoint.y);
+        hasPoints = true;
+      }
+    }
+    if (!hasPoints) return "";
+    var paddingX = Math.max(18 / width, (maxX - minX) * 0.06);
+    var paddingY = Math.max(18 / height, (maxY - minY) * 0.18);
+    minX = Math.max(0, minX - paddingX); minY = Math.max(0, minY - paddingY);
+    maxX = Math.min(1, maxX + paddingX); maxY = Math.min(1, maxY + paddingY);
+    var cropWidth = Math.max(1, (maxX - minX) * width);
+    var cropHeight = Math.max(1, (maxY - minY) * height);
+    var scale = Math.min(4, Math.max(2, 1800 / Math.max(cropWidth, cropHeight)));
     var out = document.createElement("canvas");
-    out.width = Math.max(1, Math.round(width * scale));
-    out.height = Math.max(1, Math.round(height * scale));
+    out.width = Math.max(1, Math.round(cropWidth * scale));
+    out.height = Math.max(1, Math.round(cropHeight * scale));
     var outInk = out.getContext("2d");
-    outInk.fillStyle = "#fbfaf4";
+    outInk.fillStyle = "#fff";
     outInk.fillRect(0, 0, out.width, out.height);
     outInk.strokeStyle = "#111";
     outInk.fillStyle = "#111";
@@ -726,8 +743,8 @@
     for (var i = 0; i < selected.length; i += 1) {
       var points = smoothedStrokePoints(selected[i].points || []);
       if (!points.length) continue;
-      var firstX = points[0].x * width * scale;
-      var firstY = points[0].y * height * scale;
+      var firstX = (points[0].x * width - minX * width) * scale;
+      var firstY = (points[0].y * height - minY * height) * scale;
       if (points.length === 1) {
         outInk.beginPath();
         outInk.arc(firstX, firstY, Math.max(1.2, 1.8 * scale), 0, Math.PI * 2);
@@ -737,24 +754,24 @@
       outInk.beginPath();
       outInk.moveTo(firstX, firstY);
       if (points.length === 2) {
-        outInk.lineTo(points[1].x * width * scale, points[1].y * height * scale);
+        outInk.lineTo((points[1].x * width - minX * width) * scale, (points[1].y * height - minY * height) * scale);
       } else {
         for (var j = 1; j < points.length - 1; j += 1) {
           var point = points[j];
           var next = points[j + 1];
           outInk.quadraticCurveTo(
-            point.x * width * scale,
-            point.y * height * scale,
-            ((point.x + next.x) / 2) * width * scale,
-            ((point.y + next.y) / 2) * height * scale
+            (point.x * width - minX * width) * scale,
+            (point.y * height - minY * height) * scale,
+            (((point.x + next.x) / 2) * width - minX * width) * scale,
+            (((point.y + next.y) / 2) * height - minY * height) * scale
           );
         }
         var last = points[points.length - 1];
-        outInk.lineTo(last.x * width * scale, last.y * height * scale);
+        outInk.lineTo((last.x * width - minX * width) * scale, (last.y * height - minY * height) * scale);
       }
       outInk.stroke();
     }
-    return out.toDataURL("image/jpeg", 0.8);
+    return out.toDataURL("image/png");
   }
 
   function resizeCanvas() {
@@ -1413,7 +1430,15 @@
         return;
       }
       try {
-        var result = useStream ? { ok:true, text:streamText, pageChanged:!!(streamTrailer&&streamTrailer.pageChanged), page:streamTrailer&&streamTrailer.page } : JSON.parse(xhr.responseText);
+        var result = useStream ? {
+          ok: !(streamTrailer && streamTrailer.error),
+          text: streamText,
+          error: streamTrailer && streamTrailer.error,
+          retryable: !!(streamTrailer && streamTrailer.retryable),
+          inkPreserved: !!(streamTrailer && streamTrailer.inkPreserved),
+          pageChanged: !!(streamTrailer && streamTrailer.pageChanged),
+          page: streamTrailer && streamTrailer.page
+        } : JSON.parse(xhr.responseText);
         if (!result.ok) throw new Error(result.error || "Hermes did not complete the annotation");
         done = true;
         for (var i = 0; i < strokes.length; i += 1) {
