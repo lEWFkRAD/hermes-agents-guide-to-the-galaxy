@@ -1,5 +1,7 @@
 # Hermes Agents Guide to the Galaxy
 
+> **New to the project?** Start with the [Kindle Scribe + Hermes User Guide](docs/USER_GUIDE.md). It explains everyday use first and keeps installation, security, architecture, and maintenance in a technical section at the back.
+
 A handwriting-first notebook for the Kindle Scribe that talks to a local
 [Hermes](https://127.0.0.1:8642) agent. You write with the pen (or type),
 Hermes answers, and the reply forms on the page or in a side pane. Runs as a
