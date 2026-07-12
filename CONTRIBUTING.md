@@ -1,6 +1,7 @@
 # Contributing to Hermes Agents Guide to the Galaxy
 
-Thank you for helping improve the Kindle Scribe companion for Hermes Agent.
+Thank you for helping improve Hermes Notebook, the handwriting-first Kindle,
+BOOX, and Android stylus companion for Hermes Agent.
 
 ## Development setup
 
@@ -17,7 +18,11 @@ See the README for optional Hermes adapter and runtime configuration. Never comm
 
 ## Architecture and tests
 
-`server.mjs` serves the diary and connects it to Hermes. `public/` contains the Kindle browser client. `kindle-plugin/` contains the installable localhost-only Hermes platform adapter. Tests live under `test/`.
+`server.mjs` serves the browser diary and connects it to Hermes. `public/`
+contains the Kindle-compatible browser client. `kindle-plugin/` contains the
+installable localhost-only Hermes platform adapter. The native Android/BOOX
+tester client is developed with the upstream Notebook adapter in Hermes PR
+#61687. Tests live under `test/`.
 
 Run every validation command in `AGENTS.md` before submitting. State clearly which checks ran and whether a physical Kindle was used.
 

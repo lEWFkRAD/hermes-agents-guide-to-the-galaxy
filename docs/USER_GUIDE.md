@@ -29,7 +29,7 @@ Treat a protected bookmark like a password. Do not share it or include it in scr
 
 ## Your first note
 
-1. Open the saved Hermes bookmark in the Kindle browser.
+1. On Kindle, open the saved Hermes bookmark. On Android or BOOX, open the native Notebook app.
 2. Tap **New** if you want a fresh conversation.
 3. Write your question or instruction with the Scribe pen.
 4. Tap **Send**.
@@ -217,16 +217,24 @@ See [Security Policy](../SECURITY.md) for the complete threat model and private 
 
 ## Architecture
 
-The end-to-end path is:
+The end-to-end paths are:
 
 ```text
 Kindle browser
   -> authenticated diary bridge (server.mjs)
-  -> handwriting vision and optional OCR cleanup
+  -> tightly cropped ink and two handwriting readings
+  -> OCR reconciliation, alternatives, and confidence gate
   -> localhost-only Hermes Kindle adapter
   -> tool-enabled Hermes Agent
   -> response and optional sanitized Live Page
   -> Kindle browser
+
+BOOX / Android stylus app
+  -> atomic offline page save and on-device ML Kit recognition
+  -> private authenticated HTTPS route
+  -> localhost-only Hermes Kindle/Notebook adapter
+  -> tool-enabled Hermes Agent
+  -> completed reply in the native app
 ```
 
 Important components:
@@ -234,6 +242,9 @@ Important components:
 - `public/` contains the Kindle-compatible notebook and Live Page clients.
 - `server.mjs` authenticates browser requests, manages sessions, coordinates OCR, and routes work to Hermes.
 - `kindle-plugin/` contains the installable Hermes platform adapter.
+- The Android/BOOX tester client currently lives in
+  [Hermes PR #61687](https://github.com/NousResearch/hermes-agent/pull/61687)
+  under `apps/notebook-android` and requires that PR's Notebook adapter.
 - `lib/live-page.mjs` manages revisioned and sanitized Live Page content.
 - `lib/live-page-ink.mjs` manages shared ink, operations, tombstones, and send claims.
 - `lib/live-page-journey.mjs` manages the revision and ink replay history.
@@ -249,7 +260,12 @@ Important components:
 - The localhost Hermes adapter is not a public network service.
 - Redline is a suggestion-only intent and explicitly forbids applying or publishing changes.
 
-These controls reduce risk; they do not make the Kindle appropriate for unrestricted exposure or careless handling of sensitive data.
+These controls reduce risk; they do not make any Notebook device appropriate
+for unrestricted exposure or careless handling of sensitive data.
+
+Low-confidence handwriting is stopped before the tool-enabled agent and returned
+as a clarification. A failed vision request preserves the ink for retry instead
+of forwarding a blank request or displaying a false successful completion.
 
 ## Reliability model
 

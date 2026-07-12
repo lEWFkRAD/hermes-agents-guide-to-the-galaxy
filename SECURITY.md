@@ -1,7 +1,7 @@
 # Security Policy
 
 This app can expose private diary entries, handwriting images, local network
-details, remote bookmark keys, and Hermes tool responses. Handle security
+details, remote bookmark keys, native Notebook tokens, and Hermes tool responses. Handle security
 reports privately.
 
 ## Reporting
@@ -22,7 +22,7 @@ publishing exploit details, and ship clear upgrade or mitigation instructions.
 The diary is a personal-data application, not a hardened multi-tenant service.
 The host, its local user account, Hermes Agent, and configured model endpoints
 are trusted. Other LAN devices, public internet clients, browser history,
-screenshots, logs, and physical access to an unlocked Kindle are not trusted.
+screenshots, logs, and physical access to an unlocked handwriting device are not trusted.
 
 ### LAN access
 
@@ -45,12 +45,19 @@ Never expose the diary publicly without `DIARY_REMOTE_KEY`, and never expose
 the localhost-only Kindle adapter port `8793` through Funnel, port forwarding,
 or a public reverse proxy.
 
-### Browser and physical-device risks
+### Browser, native client, and physical-device risks
 
-The Kindle bookmark, browser history, cached pages, photographs, and screenshots
-can disclose secrets or diary content. Use the device lock, remove obsolete
-bookmarks after rotation, and treat loss of an unlocked device as credential
+Kindle bookmarks, browser history, native-app settings, cached pages, photographs,
+and screenshots can disclose secrets or notebook content. Use the device lock,
+remove obsolete bookmarks after rotation, clear retired native endpoints/tokens,
+and treat loss of an unlocked Kindle, BOOX, or Android tablet as credential
 compromise.
+
+Native clients must use a private HTTPS route and `X-Notebook-Token`; they must
+not connect directly to port `8793` over the LAN or internet. Store production
+tokens in the platform keystore before treating a native build as a public
+release. The current Android/BOOX APK is a tester build and should receive a
+limited user identity and least-privilege `platform_toolsets.kindle` policy.
 
 ### Outlook integration
 
