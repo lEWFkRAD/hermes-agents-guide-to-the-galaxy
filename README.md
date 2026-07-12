@@ -1,12 +1,18 @@
 # Hermes Agents Guide to the Galaxy
 
-> **New to the project?** Start with the [Kindle Scribe + Hermes User Guide](docs/USER_GUIDE.md). It explains everyday use first and keeps installation, security, architecture, and maintenance in a technical section at the back.
+![Hermes Notebook across handwriting-first tablets](docs/assets/hermes-notebook-hero.png)
 
-A handwriting-first notebook for the Kindle Scribe that talks to a local
-[Hermes](https://127.0.0.1:8642) agent. You write with the pen (or type),
-Hermes answers, and the reply forms on the page or in a side pane. Runs as a
-tiny local web app because a stock Scribe can't sideload native apps — the
-browser is the only channel, so the app is built to feel like one.
+> **New to the project?** Start with the [Hermes Notebook user guide](docs/USER_GUIDE.md). It explains everyday Kindle use first and keeps installation, security, architecture, and maintenance in a technical section at the back.
+
+Hermes Notebook is a handwriting-first companion for
+[Hermes Agent](https://github.com/NousResearch/hermes-agent). Write naturally
+on a Kindle Scribe, BOOX, or Android stylus tablet; keep the page offline-safe;
+and send the recognized note into the same Hermes sessions, memory, skills,
+tools, and personality used by its other channels.
+
+The stock Kindle Scribe uses a browser surface because it cannot sideload native
+apps. BOOX and Android stylus tablets use the native tester client being built in
+[Hermes PR #61687](https://github.com/NousResearch/hermes-agent/pull/61687).
 
 [![CI](https://github.com/lEWFkRAD/hermes-agents-guide-to-the-galaxy/actions/workflows/ci.yml/badge.svg)](https://github.com/lEWFkRAD/hermes-agents-guide-to-the-galaxy/actions/workflows/ci.yml)
 
@@ -17,19 +23,34 @@ This project is available under the [MIT License](LICENSE).
 Run `npm run lint` and `npm test` before contributing. Security-sensitive bugs
 must be reported privately as described in [SECURITY.md](SECURITY.md).
 
+## Platform status
+
+| Surface | Status | Client |
+| --- | --- | --- |
+| Kindle Scribe | **Live** | Stock browser notebook, Live Page, Redline, and Journey |
+| BOOX | **Tester build** | Native Android APK with pen/eraser capture and offline persistence |
+| Android stylus tablets | **Tester build** | Native APK with on-device ML Kit handwriting recognition |
+| iPadOS + Apple Pencil | **Planned** | Supported by the gateway metadata contract; native client not yet shipped |
+| Desktop browser | **Development and review** | Useful for setup and smoke tests; not a substitute for e-ink QA |
+
 ## How it works
 
 ```
-Kindle browser → diary bridge (:8791) → Kindle adapter (:8793) → Hermes Gateway
+Kindle browser / BOOX / Android stylus tablet
+        → private Notebook bridge
+        → Kindle/Notebook adapter (:8793)
+        → Hermes Gateway, sessions, memory, and tools
 ```
 
-The Kindle never sees the Hermes API or adapter tokens. The bridge transcribes
-the handwriting locally, submits text to Hermes's authenticated localhost-only
-Kindle platform adapter, and receives the completed tool-assisted agent reply.
+The device never sees a Hermes model credential. The bridge or native client
+captures handwriting, preserves the page locally, and submits recognized text
+through an authenticated private boundary. The localhost-only Notebook adapter
+then creates a normal Hermes message event and returns the completed,
+tool-assisted reply.
 
 ## Supported setup
 
-The currently supported baseline is intentionally narrow:
+The currently supported host baseline is intentionally conservative:
 
 - **Node.js:** 20 or 22, matching CI. The diary has no npm runtime dependencies.
 - **Host:** Windows 11 is the real-device reference environment. The Node server
@@ -39,9 +60,10 @@ The currently supported baseline is intentionally narrow:
   until [NousResearch/hermes-agent#61687](https://github.com/NousResearch/hermes-agent/pull/61687)
   merges; afterward, use the upstream release containing that change. Configure
   the Gateway and enable the installed `kindle-scribe` plugin.
-- **Device:** a stock Kindle Scribe using its built-in browser on the same LAN,
-  or through the explicitly configured Tailscale Funnel path. Desktop browsers
-  are useful for smoke tests but do not prove e-ink interaction quality.
+- **Devices:** a stock Kindle Scribe using its built-in browser is the validated
+  production surface. BOOX and Android stylus tablets use the debug APK from
+  PR #61687 and still require physical-device QA. Desktop browsers are useful
+  for smoke tests but do not prove pen latency, palm rejection, or e-ink quality.
 
 From a fresh clone, validate before configuring a device:
 
@@ -52,12 +74,13 @@ npm start
 Invoke-RestMethod http://127.0.0.1:8791/api/config
 ```
 
-The default notebook, local history, artifact workspaces, and Kindle plugin are
-present on `main`. Outlook/PST support under `integrations/` is optional and
-requires its own local credentials. The expanded Live Page annotations and
-Journey work in [PR #1](https://github.com/lEWFkRAD/hermes-agents-guide-to-the-galaxy/pull/1)
-is experimental and is not part of `main`. Remote access is also optional; read
-the [deployment threat model](SECURITY.md#deployment-threat-model) first.
+The default notebook, local history, artifact workspaces, Live Page annotations,
+Journey, Redline suggestions, and Kindle plugin are present on `main`.
+Outlook/PST support under `integrations/` is optional and requires its own local
+credentials. Native Android/BOOX code currently lives with the upstream gateway
+work in [Hermes PR #61687](https://github.com/NousResearch/hermes-agent/pull/61687).
+Remote access is optional; read the
+[deployment threat model](SECURITY.md#deployment-threat-model) first.
 
 ## Run it
 
@@ -106,10 +129,19 @@ bookmark it. Config is via env vars (all optional):
 
 ## Features
 
+- **Multiple handwriting surfaces** — a stock-browser Kindle experience plus
+  a native Android/BOOX tester client connected through the same Notebook
+  gateway and Hermes session model.
 - **Pen input** tuned for e-ink — batched strokes, coalesced points, undo.
 - **Two-stage handwriting OCR** — a vision model reads the ink, then Qwen3.6
   minimally corrects spacing and likely proper names before Hermes sees it. Raw
   and corrected transcriptions are retained with the diary entry.
+- **Uncertainty-aware handwriting** — raw and cleaned readings remain visible
+  to Hermes. Names, dates, amounts, commands, and unfamiliar search terms should
+  be clarified before broad or consequential tool work.
+- **Native offline ink foundation** — the Android/BOOX tester build captures
+  pressure, tilt, orientation, historical samples, eraser and palm-cancel input,
+  then atomically saves the page before network delivery matters.
 - **Full Hermes tools** — the first-class Kindle platform uses normal gateway
   sessions and configured platform toolsets. Firm/person questions are grounded
   with client tools instead of answered from model memory.

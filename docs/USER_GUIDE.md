@@ -1,10 +1,10 @@
-# Kindle Scribe + Hermes User Guide
+# Hermes Notebook User Guide
 
-This guide explains how to use the Kindle Scribe companion for Hermes in everyday language. The first part is for anyone using the notebook. Installation, security, architecture, and maintenance are collected in the technical section at the back.
+This guide explains how to use the Hermes Notebook companion in everyday language. The complete browser experience currently runs on Kindle Scribe. Native BOOX and Android stylus clients are in physical-device testing, and iPadOS is a planned target. Installation, security, architecture, and maintenance are collected in the technical section at the back.
 
 ## What this gives you
 
-The companion turns a Kindle Scribe into a writing and review surface for Hermes. You can write naturally, mark a page, send the work to Hermes, and read the answer on the Kindle.
+The companion turns a handwriting tablet into a writing and review surface for Hermes. You can write naturally, mark a page, send the work to Hermes, and read the answer on the same device.
 
 You can use it to:
 
