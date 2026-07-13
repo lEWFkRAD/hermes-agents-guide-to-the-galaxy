@@ -186,6 +186,10 @@ const kindleUser = process.env.KINDLE_USER || "kindle";
 // The page is served openly; only the API (which reaches models + your data) is gated.
 const authToken = process.env.DIARY_AUTH_TOKEN || "";
 const remoteAccessKey = process.env.DIARY_REMOTE_KEY || "";
+// Transcribed handwriting is logged verbatim for OCR debugging. Set
+// DIARY_LOG_TRANSCRIPTS=false to log lengths/counts instead of content
+// (e.g. when notes may contain confidential names or amounts).
+const logTranscripts = String(process.env.DIARY_LOG_TRANSCRIPTS || "true").toLowerCase() !== "false";
 let liveWriteToken = "";
 const trustedIps = new Set(String(process.env.DIARY_TRUSTED_IPS || "")
   .split(",")
@@ -208,12 +212,19 @@ function isRemoteHost(req) {
 
 function remoteKeyOk(req) {
   if (!remoteAccessKey) return false;
-  if ((req.headers["x-diary-remote-key"] || "") === remoteAccessKey) return true;
+  if (sameSecret(req.headers["x-diary-remote-key"], remoteAccessKey)) return true;
+  const cookies = String(req.headers.cookie || "").split(";");
+  for (const cookie of cookies) {
+    const [name, ...value] = cookie.trim().split("=");
+    try {
+      if (name === "diary_remote" && sameSecret(decodeURIComponent(value.join("=")), remoteAccessKey)) return true;
+    } catch {}
+  }
   try {
     const url = new URL(req.url, "http://diary.local");
-    if (url.searchParams.get("rk") === remoteAccessKey) return true;
+    if (sameSecret(url.searchParams.get("rk"), remoteAccessKey)) return true;
     const match = url.pathname.match(/^\/remote\/([^/]+)(?:\/live\/?)?$/);
-    return Boolean(match && decodeURIComponent(match[1]) === remoteAccessKey);
+    return Boolean(match && sameSecret(decodeURIComponent(match[1]), remoteAccessKey));
   } catch {
     return false;
   }
@@ -223,17 +234,17 @@ function authOk(req) {
   if (isRemoteHost(req)) return remoteKeyOk(req);
   if (!authToken) return true;
   if (trustedIps.has(remoteIp(req))) return true;
-  if ((req.headers["x-diary-auth"] || "") === authToken) return true;
+  if (sameSecret(req.headers["x-diary-auth"], authToken)) return true;
   const cookies = String(req.headers.cookie || "").split(";");
   for (const cookie of cookies) {
     const [name, ...value] = cookie.trim().split("=");
     try {
-      if (name === "diary_auth" && decodeURIComponent(value.join("=")) === authToken) return true;
+      if (name === "diary_auth" && sameSecret(decodeURIComponent(value.join("=")), authToken)) return true;
     } catch {}
   }
   try {
     const u = new URL(req.url, "http://diary.local");
-    if (u.searchParams.get("k") === authToken) return true;
+    if (sameSecret(u.searchParams.get("k"), authToken)) return true;
   } catch {}
   return false;
 }
@@ -1435,7 +1446,18 @@ async function handleSend(req, res) {
           ocrAlternatives = reconciled.alternatives;
           ocrConfidence = reconciled.confidence;
           noteText = (noteText ? noteText + "\n\n" : "") + cleanedTranscription;
-          logSend({ kind: "ocr_result", readings, cleanedTranscription, ocrAlternatives, ocrConfidence, imageBytes });
+          if (logTranscripts) {
+            logSend({ kind: "ocr_result", readings, cleanedTranscription, ocrAlternatives, ocrConfidence, imageBytes });
+          } else {
+            logSend({
+              kind: "ocr_result",
+              readingLengths: readings.map((reading) => String(reading).length),
+              cleanedLength: cleanedTranscription.length,
+              alternativeCount: (ocrAlternatives || []).length,
+              ocrConfidence,
+              imageBytes
+            });
+          }
         } catch (error) {
           logSend({
             kind: "ocr_error",
@@ -1799,6 +1821,13 @@ async function serveStatic(req, res) {
       send(res, 401, "Unauthorized", "text/plain; charset=utf-8");
       return;
     }
+    // Pair the bookmark key into an HttpOnly cookie so in-page requests can
+    // authenticate without re-carrying the key in URLs. The bookmark itself
+    // remains the documented secret; this is additive.
+    res.setHeader(
+      "set-cookie",
+      `diary_remote=${encodeURIComponent(remoteAccessKey)}; Path=/; Max-Age=31536000; HttpOnly; Secure; SameSite=Lax`
+    );
     rel = "/live.html";
   }
   if (rel === "/" || rel === "/index.html") rel = "/live.html";
@@ -1827,7 +1856,7 @@ const server = http.createServer(async (req, res) => {
   // Kindle retains first-party cookies more reliably than localStorage.
   if (authToken && req.method === "GET") {
     const requestUrl = new URL(req.url, "http://diary.local");
-    if (requestUrl.searchParams.get("k") === authToken) {
+    if (sameSecret(requestUrl.searchParams.get("k"), authToken)) {
       requestUrl.searchParams.delete("k");
       const location = requestUrl.pathname + requestUrl.search;
       res.writeHead(302, {
