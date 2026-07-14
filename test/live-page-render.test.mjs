@@ -57,8 +57,9 @@ test("annotation tools default to a compact Kindle-friendly reading mode", async
   const css = await fs.readFile(path.join(repoRoot, "public", "live.css"), "utf8");
   const source = await fs.readFile(path.join(repoRoot, "public", "live.js"), "utf8");
 
-  assert.match(html, /<body class="livePage viewMode toolsCollapsed">/);
+  assert.match(html, /<body class="livePage drawMode toolsCollapsed">/);
   assert.match(html, /id="annotationToggleBtn"/);
+  assert.match(html, /id="annotationHandleBtn"/);
   assert.match(html, /id="annotationTools"[^>]*hidden/);
   assert.match(html, /class="toolActions"/);
   assert.match(html, /id="liveSendBtn"/);
@@ -79,6 +80,13 @@ test("annotation tools default to a compact Kindle-friendly reading mode", async
   assert.match(source, /var surfaceMode = "scroll"/);
   assert.match(source, /function setSurfaceMode\(nextMode\)/);
   assert.match(source, /surfaceMode === "pen" \? "Scroll" : "Pen"/);
+  // Pen-ready on open: boot enters pen mode with the tool panel collapsed.
+  assert.match(source, /setSurfaceMode\("pen"\);\s*\n\s*setActivePanel\(""\);/);
+  // The deck Pen button only toggles pen/scroll; the dock handle owns the panel.
+  assert.match(source, /setSurfaceMode\(surfaceMode === "pen" \? "scroll" : "pen"\)/);
+  assert.doesNotMatch(source, /setActivePanel\("pen"\);\s*\}\s*\}\);/);
+  assert.match(source, /add\(annotationHandleBtn, "click", function \(\) \{ togglePanel\("pen"\); \}\)/);
+  assert.match(css, /body\.drawMode\.toolsCollapsed \.dockHandle \{ display: block; \}/);
   assert.doesNotMatch(source, /var drawMode =/);
   assert.doesNotMatch(source, /var interactMode =/);
   assert.match(source, /var inkTool = "pen"/);

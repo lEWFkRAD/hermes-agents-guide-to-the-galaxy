@@ -98,6 +98,7 @@
   var liveHistoryCloseBtn = document.getElementById("liveHistoryCloseBtn");
   var liveHistoryList = document.getElementById("liveHistoryList");
   var annotationToggleBtn = document.getElementById("annotationToggleBtn");
+  var annotationHandleBtn = document.getElementById("annotationHandleBtn");
   var annotationToolsEl = document.getElementById("annotationTools");
   if (!surfaceEl || !frameEl || !canvasEl || !displayEl) return;
   var replyEl = document.getElementById("liveReply");
@@ -938,6 +939,9 @@
       updateInkButtons();
       return stopEvent(event);
     }
+    // Writing begins: fold the tool panel out of the way. Eraser/lasso/move
+    // return above so their panel stays put for the follow-up action.
+    if (activePanel === "pen") setActivePanel("");
     if (event.pointerId !== undefined && canvasEl.setPointerCapture) {
       try { canvasEl.setPointerCapture(event.pointerId); } catch (error) {}
     }
@@ -1093,7 +1097,8 @@
   function updateBodyMode() {
     document.body.className = "livePage " +
       (surfaceMode === "pen" ? "drawMode" : (surfaceMode === "interact" ? "interactMode" : "viewMode")) + " " +
-      (activePanel ? "toolsOpen" : "toolsCollapsed");
+      (activePanel ? "toolsOpen" : "toolsCollapsed") +
+      (activePanel === "pen" ? " penToolsOpen" : "");
   }
 
   function frameContentUrl() {
@@ -1115,6 +1120,7 @@
     if (inkTool === "pen") {
       setText(annotationToggleBtn, surfaceMode === "pen" ? "Scroll" : "Pen");
     }
+    annotationToggleBtn.setAttribute("aria-pressed", surfaceMode === "pen" ? "true" : "false");
     setText(interactModeBtn, surfaceMode === "interact" ? "Scroll" : "Interact");
     setText(drawModeBtn, surfaceMode === "pen" ? "Done" : "Draw");
     drawModeBtn.className = "labeledTool" + (surfaceMode === "pen" ? " active" : "");
@@ -1127,13 +1133,14 @@
   function setActivePanel(name) {
     if (name !== "pen" && name !== "hermes" && name !== "more") name = "";
     activePanel = name;
-    var panels = [["pen",annotationToolsEl,annotationToggleBtn],["hermes",hermesToolsEl,hermesToggleBtn],["more",moreToolsEl,moreToggleBtn]];
+    var panels = [["pen",annotationToolsEl,annotationHandleBtn],["hermes",hermesToolsEl,hermesToggleBtn],["more",moreToolsEl,moreToggleBtn]];
     for (var i = 0; i < panels.length; i += 1) {
       var expanded = activePanel === panels[i][0];
       panels[i][1].hidden = !expanded;
       panels[i][2].setAttribute("aria-expanded", expanded ? "true" : "false");
     }
-    annotationToggleBtn.setAttribute("aria-label", activePanel === "pen" ? "Close annotation tools" : "Open annotation tools");
+    annotationHandleBtn.setAttribute("aria-label", activePanel === "pen" ? "Close annotation tools" : "Open annotation tools");
+    setText(annotationHandleBtn, activePanel === "pen" ? "Hide" : "Tools");
     updateBodyMode();
   }
 
@@ -1514,14 +1521,9 @@
   add(window, "resize", resizeCanvas);
   add(frameEl, "load", hideMessage);
   add(annotationToggleBtn, "click", function () {
-    if (surfaceMode === "pen") {
-      setActivePanel("");
-      setSurfaceMode("scroll");
-    } else {
-      setSurfaceMode("pen");
-      setActivePanel("pen");
-    }
+    setSurfaceMode(surfaceMode === "pen" ? "scroll" : "pen");
   });
+  add(annotationHandleBtn, "click", function () { togglePanel("pen"); });
   add(hermesToggleBtn, "click", function () { togglePanel("hermes"); });
   add(moreToggleBtn, "click", function () { togglePanel("more"); });
   add(interactModeBtn, "click", function () { setActivePanel(""); setSurfaceMode(surfaceMode === "interact" ? "scroll" : "interact"); });
@@ -1582,7 +1584,7 @@
 
   loadInk();
   setText(liveThemeBtn, darkMode ? "Light" : "Dark");
-  setSurfaceMode("scroll");
+  setSurfaceMode("pen");
   setActivePanel("");
   resizeCanvas();
   loadMetadata(true);

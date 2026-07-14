@@ -14,18 +14,19 @@
     <link rel="stylesheet" href="/live.css?v=__UI_BUILD_ID__">
     <link rel="stylesheet" href="/live-journey.css?v=3">
   </head>
-  <body class="livePage viewMode toolsCollapsed">
+  <body class="livePage drawMode toolsCollapsed">
     <main class="liveShell">
       <header class="liveBar">
         <div class="liveIdentity"><strong>Hermes</strong><span id="liveState" aria-live="polite">Opening…</span></div>
         <div class="liveActions">
-          <button id="annotationToggleBtn" class="menuPill" type="button" aria-expanded="false" aria-controls="annotationTools">Pen</button>
+          <button id="annotationToggleBtn" class="menuPill" type="button" aria-pressed="true">Pen</button>
           <button id="interactModeBtn" type="button">Interact</button>
           <button id="hermesToggleBtn" class="menuPill" type="button" aria-expanded="false" aria-controls="hermesTools">Hermes</button>
           <button id="liveSendBtn" type="button" disabled>Send</button>
           <button id="moreToggleBtn" class="menuPill" type="button" aria-expanded="false" aria-controls="moreTools" aria-label="More options">&#8943;</button>
         </div>
         <div id="annotationDock" class="annotationDock">
+          <button id="annotationHandleBtn" class="dockHandle" type="button" aria-expanded="false" aria-controls="annotationTools">Tools</button>
           <div id="annotationTools" class="annotationTools" role="toolbar" aria-label="HTML drawing tools" hidden>
             <div class="toolActions" aria-label="Drawing actions">
               <button id="drawModeBtn" class="labeledTool" type="button" aria-pressed="true" aria-label="Pen" title="Pen">

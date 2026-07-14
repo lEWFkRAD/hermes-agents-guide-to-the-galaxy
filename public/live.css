@@ -279,6 +279,23 @@ body.interactMode #interactModeBtn { background: var(--ink); color: var(--paper)
   display: block;
   pointer-events: none;
 }
+.dockHandle {
+  display: none;
+  position: absolute;
+  right: 10px;
+  bottom: 0;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 2px solid var(--ink);
+  border-bottom: 0;
+  border-radius: 10px 10px 0 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 16px;
+  pointer-events: auto;
+}
+body.drawMode.toolsCollapsed .dockHandle { display: block; }
+body.penToolsOpen .dockHandle { display: block; bottom: 100%; }
 .annotationTools,
 .pillMenu {
   position: static;
