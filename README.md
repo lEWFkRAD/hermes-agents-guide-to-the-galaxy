@@ -19,6 +19,8 @@ apps. BOOX and Android stylus tablets use the native tester client being built i
 Community contributions, including reviewed AI-assisted contributions, are
 welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).
 This project is available under the [MIT License](LICENSE).
+Release history is tracked in [CHANGELOG.md](CHANGELOG.md); maintainers follow
+the tag-gated process in [RELEASING.md](RELEASING.md).
 
 Run `npm run lint` and `npm test` before contributing. Security-sensitive bugs
 must be reported privately as described in [SECURITY.md](SECURITY.md).
@@ -56,10 +58,10 @@ The currently supported host baseline is intentionally conservative:
 - **Host:** Windows 11 is the real-device reference environment. The Node server
   and tests also run on Linux; the included Task Scheduler, `.cmd`, PowerShell,
   and VBScript helpers are Windows-only and optional.
-- **Hermes Agent:** use `lEWFkRAD/hermes-agent` branch `feat/kindle-platform`
-  until [NousResearch/hermes-agent#61687](https://github.com/NousResearch/hermes-agent/pull/61687)
-  merges; afterward, use the upstream release containing that change. Configure
-  the Gateway and enable the installed `kindle-scribe` plugin.
+- **Hermes Agent:** compatibility is merge-gated against exact upstream commit
+  `03fa32c92dd445eb64c7f67434dd91b32c40701d`. See
+  [the pin and update policy](docs/HERMES_INTEGRATION.md). Configure the Gateway
+  and enable the installed `kindle-scribe` plugin.
 - **Devices:** a stock Kindle Scribe using its built-in browser is the validated
   production surface. BOOX and Android stylus tablets use the debug APK from
   PR #61687 and still require physical-device QA. Desktop browsers are useful
@@ -68,10 +70,12 @@ The currently supported host baseline is intentionally conservative:
 From a fresh clone, validate before configuring a device:
 
 ```powershell
+npm ci --ignore-scripts
 npm run lint
 npm test
+$env:DIARY_AUTH_TOKEN = [Guid]::NewGuid().ToString('N')
 npm start
-Invoke-RestMethod http://127.0.0.1:8791/api/config
+Invoke-RestMethod http://127.0.0.1:8791/api/config -Headers @{ "X-Diary-Auth" = $env:DIARY_AUTH_TOKEN }
 ```
 
 The default notebook, local history, artifact workspaces, Live Page annotations,
@@ -91,26 +95,45 @@ normal Hermes updates do not delete it:
 ```powershell
 hermes plugins install lEWFkRAD/hermes-agents-guide-to-the-galaxy/kindle-plugin --enable
 hermes gateway restart
-Invoke-RestMethod http://127.0.0.1:8793/health
+$headers = @{ "X-Kindle-Token" = $env:KINDLE_INGEST_TOKEN }
+Invoke-RestMethod http://127.0.0.1:8793/health -Headers $headers
 ```
 
 The installer prompts for `KINDLE_INGEST_TOKEN` and saves it in Hermes's local
 environment file. Set `KINDLE_ALLOWED_USERS` to the stable identity used by the
-bridge (for example, `jeff`). Keep `KINDLE_ALLOW_ALL_USERS` unset.
+bridge (for example, `jeff`). Keep `KINDLE_ALLOW_ALL_USERS` unset. The health
+endpoint intentionally requires the same token and attests the selected profile,
+listener, and non-secret owner fingerprint before the bridge sends a note.
 
-Then start the diary bridge:
+Generate a browser credential, then start the diary bridge. Persist the same
+value in the service account's environment when using the scheduled launcher:
+
+```powershell
+$bytes = New-Object byte[] 32
+$rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+$rng.GetBytes($bytes)
+$rng.Dispose()
+$env:DIARY_AUTH_TOKEN = [Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+','-').Replace('/','_')
+```
 
 ```
 npm start          # node server.mjs — listens on 0.0.0.0:8791
 ```
 
-Then open `http://<this-machine-lan-ip>:8791/` in the Scribe's browser and
-bookmark it. Config is via env vars (all optional):
+Then open `http://<this-machine-lan-ip>:8791/?k=<DIARY_AUTH_TOKEN>` once in the
+Scribe's browser and bookmark it after pairing. Configuration is via environment
+variables; either `DIARY_AUTH_TOKEN` or `DIARY_REMOTE_KEY` is required:
 
 | Var | Default | Purpose |
 | --- | --- | --- |
 | `DIARY_PORT` | `8791` | Port the bridge listens on |
 | `DIARY_HOST` | `0.0.0.0` | Bind address |
+| `HERMES_HOME` | *(unset)* | Selected Hermes profile home. When set, Notebook data and backups default under this profile; when unset, the historical checkout-local layout is retained. |
+| `HERMES_PROFILE_NAME` | *(inferred)* | Optional assertion for the selected profile (`default` or the named profile ID). Startup fails if it disagrees with `HERMES_HOME`. |
+| `HERMES_CONFIG` | `<HERMES_HOME>/config.yaml` | Explicit config path. With a selected profile it must be that profile's exact config unless the development override below is enabled. |
+| `DIARY_DATA_DIR` | profile `notebook/data` or checkout `data` | Active notebook state. Selected-profile paths cannot escape through `..`, a symlink, or a junction. |
+| `DIARY_BACKUP_DIR` | profile `notebook/backups` or checkout `backups` | Backup destination; it must not overlap the active data directory. |
+| `DIARY_DEV_ALLOW_PROFILE_PATH_OVERRIDE` | `false` | Development-only escape hatch for external data/config paths. Rejected when `NODE_ENV=production`. |
 | `HERMES_ENDPOINT` | `http://127.0.0.1:8642/v1/chat/completions` | Upstream gateway |
 | `DIARY_TEXT_MODEL` | `hermes-agent` | Model requested upstream |
 | `DIARY_VISION_ENDPOINT` | `http://127.0.0.1:8005/v1/chat/completions` | Vision model used for handwriting OCR |
@@ -118,14 +141,66 @@ bookmark it. Config is via env vars (all optional):
 | `DIARY_OCR_CLEANUP_ENDPOINT` | `http://127.0.0.1:8020/v1/chat/completions` | Text model used to normalize uncertain OCR |
 | `DIARY_OCR_CLEANUP_MODEL` | `qwen3.6-27b-nvfp4` | OCR cleanup model name |
 | `KINDLE_ADAPTER_URL` | `http://127.0.0.1:8793/ingest` | Hermes Kindle platform ingest endpoint |
+| `KINDLE_INGEST_HOST` | `127.0.0.1` | Adapter listener host. It must be a literal IPv4/IPv6 loopback address. |
+| `KINDLE_INGEST_PORT` | `8793` | Adapter listener port. Give concurrently enabled profiles distinct ports. |
+| `KINDLE_INGEST_TOKEN` | *(required)* | Profile-scoped shared secret for authenticated health and ingest. Set the same value in the bridge process and selected Hermes profile. |
+| `KINDLE_INSECURE` | `false` | Explicit tokenless loopback development mode; never permits a non-loopback adapter bind. |
 | `KINDLE_USER` | `kindle` | Stable Hermes user identity for the device |
+| `KINDLE_REPLY_TIMEOUT` | `240` | Plain-decimal seconds (`0.01`–`300`, at most three fractional digits) used in the cross-runtime owner identity. |
 | `DIARY_CHAT_TIMEOUT_MS` | `120000` | Timeout for ordinary model and OCR requests |
 | `DIARY_STREAM_TIMEOUT_MS` | `300000` | Timeout for streaming model responses |
-| `DIARY_ADAPTER_TIMEOUT_MS` | `300000` | Timeout for Kindle adapter requests |
+| `DIARY_ADAPTER_TIMEOUT_MS` | `KINDLE_REPLY_TIMEOUT * 1000 + 5000` (`245000` with defaults) | Integer outer timeout for Kindle adapter requests. An explicit value must be at least 5,000 ms greater than the reply timeout and no more than 600,000 ms. |
 | `DIARY_WARM_TIMEOUT_MS` | `15000` | Timeout for background warm-up requests |
-| `DIARY_AUTH_TOKEN` | *(unset)* | If set, `/api/*` requires this secret. Open the diary once with `?k=<token>` — it's saved and sent on every call. Unset = open (LAN default). |
-| `DIARY_REMOTE_KEY` | *(unset)* | Permanent key required for API and handwriting access through a public `*.ts.net` Funnel hostname. Bookmark `/remote/<key>`; LAN access remains unchanged. |
-| `DIARY_LIVE_WRITE_TOKEN` | *(generated locally)* | Optional override for the Live Page publisher secret. With no override, the bridge creates `data/live-page-write.token`. |
+| `DIARY_AUTH_TOKEN` | *(required unless remote key is set)* | LAN browser credential for every `/api/*` and `/img/*` request. Open the diary once with `?k=<token>` so the browser can pair. |
+| `DIARY_REMOTE_KEY` | *(required unless LAN token is set)* | Permanent bearer key for Funnel or remote-key-only deployments. Every protected request needs this key or `DIARY_AUTH_TOKEN`, regardless of peer IP, `Host`, `Origin`, or proxy headers. Bookmark `/remote/<key>`. |
+| `DIARY_LIVE_WRITE_TOKEN` | *(generated locally)* | Optional override for the Live Page publisher secret. With no override, the bridge creates `live-page-write.token` in the active data directory. |
+
+### Multiple Hermes profiles
+
+The plugin resolves profile identity and secrets at adapter-construction time,
+then revalidates the selected profile's `.env` before dispatch and before
+returning a reply. Caller-supplied `user` or `profile` fields cannot select a
+different Hermes profile.
+
+For each concurrently enabled profile, install/enable the plugin under that
+profile, assign a distinct `KINDLE_INGEST_PORT`, and launch a separate companion
+bridge with matching `HERMES_HOME`, token, user, adapter host/port, and
+`KINDLE_ADAPTER_URL`. Give each bridge a distinct `DIARY_PORT`. Its default data,
+backups, and Hermes config then remain under that profile home. A listener-port
+collision or health-identity mismatch fails closed instead of borrowing another
+profile's adapter.
+
+Before state initialization, each bridge acquires the fixed reserved
+`.hermes-notebook-owner` claim inside its canonical data root, so alternate
+local mount paths still converge on the same storage-relative lock. A live root
+has one process owner. Valid stale claims recover only within the same machine,
+boot, and PID namespace after OS process-start identity and nonce-barrier
+checks; foreign or malformed claims fail closed.
+Shutdown releases ownership only after requests and persistence queues quiesce.
+
+For example, prefix profile-scoped plugin/config commands with
+`hermes -p research` for a named `research` profile, then restart the gateway
+after configuring the intended profiles. Export that profile's values only into
+its companion process; do not rely on one machine-wide token for several
+profiles.
+
+#### Upgrading checkout-local state
+
+Version 0.1 ignored `HERMES_HOME` and stored state under checkout `data/` and
+`backups/`. Version 0.2 refuses to start a selected profile with unresolved
+empty or populated targets while either legacy directory contains state. A
+matching migration receipt is required, so a successful upgrade cannot silently
+present an empty or unrelated notebook.
+
+Stop every bridge using the checkout, make an independent backup, export the
+destination profile's `HERMES_HOME` (and optional `HERMES_PROFILE_NAME`), then
+run `npm run migrate:profile`. The command rejects symlinks and populated,
+unowned targets; copies and hashes each file through a same-filesystem staging
+directory; atomically installs each verified profile tree; and writes migration
+receipts. It never deletes the legacy source. Start the bridge only after
+inspecting the reported destination and verifying the copied notebook. While
+the preserved legacy tree exists, startup rehashes it against the receipt and
+refuses to hide any write made later by an older checkout.
 
 ## Features
 
@@ -165,7 +240,7 @@ bookmark it. Config is via env vars (all optional):
   HTML page, draw vector annotations over it, label the annotation intent, and
   ask the real Hermes Kindle channel for a structured change proposal. Workspace
   state, artifact revisions, annotations, proposals, and audit events persist
-  locally under `data/workspaces/`.
+  locally under `workspaces/` in the active data directory.
 - **Hermes Live Page** — tap **Live** to open one living HTML document. Hermes
   can reshape the same page as the conversation develops: a table, visual map,
   client brief, working canvas, or any other self-contained HTML/CSS layout.
@@ -201,8 +276,9 @@ that Hermes reads, edits, and republishes as the work changes. On a remote
 Kindle bookmark the app preserves the secret path as `/remote/<key>/live`, and
 **Notebook** returns to `/remote/<key>`.
 
-The Kindle channel tells Hermes to maintain `data/live-page-source.html` and
-publish it before replying whenever the user asks to build or change the Live
+The Kindle channel tells Hermes to maintain `live-page-source.html` in the
+active data directory and publish it before replying whenever the user asks to
+build or change the Live
 Page. The source may use self-contained HTML and CSS. The publisher removes
 scripts, forms, event handlers, embedded frames, and external URLs; the result
 then renders inside a scriptless iframe with a restrictive content security
@@ -215,10 +291,11 @@ Publish a living HTML file manually after the bridge is running:
 node scripts/publish-live-page.mjs examples/live-page.example.html
 ```
 
-The server creates a private publisher token under ignored `data/` on first
-start. Publishing requires that token, a loopback socket, and a non-Funnel
-host. A Kindle, LAN browser, or public Funnel request can read the authenticated
-page but cannot replace it. The shell checks every 10 seconds and loads a new
+The server creates a private publisher token under the active data directory on
+first start. Publishing requires that token over a loopback socket; the remote
+bookmark key alone never authorizes a write. A Kindle, LAN browser, or public
+Funnel request can read the authenticated page but cannot replace it. The shell
+checks every 10 seconds and loads a new
 HTML revision only when Hermes has actually changed the document. Identical
 publishes keep the same SHA-256 revision and do not repaint the e-ink page.
 
@@ -232,7 +309,10 @@ publishes keep the same SHA-256 revision and do not repaint the e-ink page.
 - `Hermes-Diary.task.xml` / `Hermes-Diary-Archive.task.xml` — Task Scheduler
   templates (need an elevated `schtasks /create /xml`). Before importing,
   replace `__INSTALL_DIR__` with the folder you cloned into and `__USER__`
-  with your `DOMAIN\user` (e.g. from `whoami`).
+  with your `DOMAIN\user` (e.g. from `whoami`). These are single-profile
+  convenience templates: do not reuse their fixed task names for concurrent
+  profiles. Use distinct launchers/tasks with profile-specific environment and
+  never place adapter tokens in task arguments or XML.
 
 ## Away from the LAN with Tailscale Funnel
 
@@ -276,9 +356,11 @@ device secret. This does not depend on Kindle cookies or local storage.
 5. Verify the boundary before using it:
 
    - The full bookmark loads the diary and its sessions.
-   - The same `*.ts.net/api/sessions` URL without `rk` returns `401`.
+   - `/api/config`, `/api/sessions`, and `/img/*` without either configured
+     credential return `401`, even with a forged, missing, or trailing-dot Host.
    - A wrong key returns `401`.
-   - The office-LAN URL keeps its existing authentication behavior.
+   - LAN clients use the same remote bookmark/key, or `DIARY_AUTH_TOKEN` when
+     that separate token is configured.
 
 To disable public exposure without changing the diary configuration:
 
@@ -291,22 +373,30 @@ if it is copied into chat, logs, screenshots, or any system you do not trust.
 
 ## Backups
 
-Run `npm run backup` to create a verified, timestamped snapshot under `backups/`.
-Each generation includes a SHA-256 manifest, and the newest 14 generations are
-retained by default. Set `DIARY_BACKUP_DIR` to keep copies on another drive and
-`DIARY_BACKUP_KEEP` to change retention. A daily Windows task named
-`Hermes-Diary-Backup` runs this command on the installed machine.
+Run `npm run backup` to create a verified, timestamped snapshot. With a selected
+`HERMES_HOME`, snapshots default to that profile's `notebook/backups`; legacy
+checkout mode uses `backups/`. Each generation includes a SHA-256 manifest, and
+the newest 14 generations are retained by default. Set `DIARY_BACKUP_DIR` to a
+canonical, non-overlapping destination and `DIARY_BACKUP_KEEP` to change
+retention. Each run uses a process-unique stage and UUID-suffixed generation,
+then publishes atomically only when complete path/type/size/SHA-256 manifests
+match before and after the copy. Concurrent mutation or a same-timestamp run
+cannot publish or overwrite a generation. The included archive task performs
+image-retention maintenance; it is not a substitute for scheduling and
+verifying `npm run backup` separately.
 
 ## Data & privacy
 
-- Entries and handwriting images live under `data/` and are **git-ignored** —
-  personal content never enters the repo.
-- The bridge listens on the LAN with no auth by default. Fine for a home network.
-  To lock it down, set `DIARY_AUTH_TOKEN` and open the diary with `?k=<token>` —
-  the API then rejects anything without the secret (401). Required before exposing
-  it beyond the LAN or before wiring it to tool-enabled agents that reach real data.
+- Entries and handwriting images live under the selected profile's
+  `notebook/data` (or checkout `data/` in legacy mode). Both layouts are outside
+  release artifacts, and checkout data is **git-ignored**.
+- The bridge refuses to start without `DIARY_AUTH_TOKEN` or `DIARY_REMOTE_KEY`.
+  Every `/api/*` and `/img/*` request needs one of those explicit credentials;
+  peer IP, `Host`, `Origin`, and forwarding headers never authorize access.
 - For away-from-LAN Kindle access, configure `DIARY_REMOTE_KEY` before enabling
-  Tailscale Funnel. Remote `*.ts.net` requests without the key receive `401`,
-  including `/api/config`, session history, and stored handwriting images. The
-  key is carried in the permanent `/remote/<key>` Kindle bookmark rather than
-  cookies, query-string persistence, or local storage.
+  Tailscale Funnel. The bridge does not trust client-controlled `Host` or
+  forwarding headers: every protected request without that key or
+  `DIARY_AUTH_TOKEN` receives `401`, including
+  `/api/config`, session history, and stored handwriting images. The key is
+  carried in the permanent `/remote/<key>` Kindle bookmark rather than cookies,
+  query-string persistence, or local storage.

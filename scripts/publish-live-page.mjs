@@ -3,9 +3,11 @@ import fs from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveNotebookRuntime } from "../lib/runtime-profile.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "..");
+const runtime = resolveNotebookRuntime({ repoRoot });
 const inputPath = process.argv[2];
 
 if (!inputPath) {
@@ -34,7 +36,7 @@ if (extension === ".html" || extension === ".htm" || (!extension && /^\s*(?:<!do
   }
 }
 
-const dataDir = process.env.DIARY_DATA_DIR || path.join(repoRoot, "data");
+const dataDir = runtime.dataDir;
 let token = String(process.env.DIARY_LIVE_WRITE_TOKEN || "").trim();
 if (!token) {
   try {

@@ -1,0 +1,26 @@
+{
+  "input": {
+    "profile_name": "finance",
+    "profile_home": "c:/profiles/hermès/配置",
+    "host": "127.0.0.1",
+    "port": 8793,
+    "token": "not-a-real-secret",
+    "insecure": false,
+    "user_id": "finance-scribe",
+    "reply_timeout_ms": 240000
+  },
+  "canonical_payload": {
+    "host": "127.0.0.1",
+    "insecure": false,
+    "port": 8793,
+    "profile_home": "c:/profiles/hermès/配置",
+    "profile_name": "finance",
+    "reply_timeout_ms": 240000,
+    "service": "kindle-scribe",
+    "token_fingerprint": "ed24bc0bb03d0e89e8bacafb1545ee4ed6a2b273f3db69199787632b32545179",
+    "user_id": "finance-scribe",
+    "version": "0.2.0"
+  },
+  "canonical_json": "{\"host\":\"127.0.0.1\",\"insecure\":false,\"port\":8793,\"profile_home\":\"c:/profiles/hermès/配置\",\"profile_name\":\"finance\",\"reply_timeout_ms\":240000,\"service\":\"kindle-scribe\",\"token_fingerprint\":\"ed24bc0bb03d0e89e8bacafb1545ee4ed6a2b273f3db69199787632b32545179\",\"user_id\":\"finance-scribe\",\"version\":\"0.2.0\"}",
+  "expected_sha256": "5fa9431a651dcc74d80853cfb971d403285729ed88c283a19ec10ec932301218"
+}

@@ -2,7 +2,7 @@ manifest_version: 1
 name: kindle-scribe
 label: Kindle Scribe
 kind: platform
-version: 1.0.0
+version: 0.2.0
 description: >
   Kindle Scribe gateway adapter for Hermes Agent. Bridges the handwriting
   notebook into the gateway as a platform so handwritten notes reach the full
@@ -12,8 +12,12 @@ author: Jeffrey Watts
 requires_env:
   - name: KINDLE_INGEST_TOKEN
     description: "Shared secret used between the diary bridge and Kindle adapter"
-    secret: true
+    password: true
 optional_env:
+  - name: KINDLE_USER
+    description: "Stable profile-scoped user identity for notebook messages (default kindle)"
+  - name: KINDLE_HOME_CHANNEL
+    description: "Profile-scoped notebook chat ID used for cron and home delivery"
   - name: KINDLE_INSECURE
     description: "Skip token auth for localhost development only (true/false)"
   - name: KINDLE_ALLOWED_USERS

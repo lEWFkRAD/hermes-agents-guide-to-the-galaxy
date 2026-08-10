@@ -33,12 +33,18 @@ Instructions for human and AI contributors working in this repository.
 ## Validation
 
 ```text
-npm test
-npm run lint
-python -m pytest test/kindle-plugin -q
+npm ci --ignore-scripts
+npm run validate
+python -m pip install --upgrade pip==26.1.2
+python -m pip install --requirement requirements-dev.txt
+python -m pip install -e .hermes-agent
+python -m pytest test/kindle-plugin test/ci -q
 node --check server.mjs
 node --check public/app.js
 python -m compileall -q kindle-plugin
+npm audit --omit=dev --audit-level=high
+python -m pip_audit --requirement requirements-dev.txt
+python scripts/audit_hermes_environment.py
 ```
 
 If AI materially generated or transformed a change, disclose that in the pull

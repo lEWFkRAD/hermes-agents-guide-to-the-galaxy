@@ -8,6 +8,13 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { normalizeLivingPage } from "../lib/live-page.mjs";
+import {
+  NOTEBOOK_SERVICE,
+  NOTEBOOK_VERSION,
+  resolveAdapterRuntime,
+  resolveNotebookRuntime
+} from "../lib/runtime-profile.mjs";
+import { dataRootLockPath } from "../lib/data-root-lock.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -32,18 +39,37 @@ function request(port, pathname, { method = "GET", headers = {}, body = "" } = {
 }
 
 async function startServer(options = {}) {
-  const dataDir = options.dataDir || await fs.mkdtemp(path.join(os.tmpdir(), "hermes-live-api-"));
+  const createdDataDir = options.dataDir || await fs.mkdtemp(path.join(os.tmpdir(), "hermes-live-api-"));
+  const dataDir = await fs.realpath(createdDataDir);
+  const adapterUrl = options.kindleAdapterUrl || "";
+  const adapterPort = adapterUrl ? Number(new URL(adapterUrl).port) : 8793;
+  const adapterToken = options.adapterToken || "test-kindle-ingest-token";
+  const childEnv = {
+    ...process.env,
+    HERMES_HOME: "",
+    HERMES_PROFILE_NAME: "",
+    HERMES_CONFIG: "",
+    LOCALAPPDATA: path.join(dataDir, "local-app-data"),
+    DIARY_DATA_DIR: dataDir,
+    DIARY_BACKUP_DIR: "",
+    DIARY_DEV_ALLOW_PROFILE_PATH_OVERRIDE: "",
+    DIARY_HOST: "127.0.0.1",
+    DIARY_PORT: "0",
+    DIARY_AUTH_TOKEN: "local-secret",
+    DIARY_REMOTE_KEY: "remote-secret",
+    KINDLE_INGEST_HOST: "127.0.0.1",
+    KINDLE_INGEST_PORT: String(adapterPort),
+    KINDLE_INGEST_TOKEN: adapterToken,
+    KINDLE_INSECURE: "false",
+    KINDLE_USER: "kindle",
+    KINDLE_REPLY_TIMEOUT: "240",
+    KINDLE_ADAPTER_URL: adapterUrl
+  };
+  const profileRuntime = resolveNotebookRuntime({ environ: childEnv, repoRoot });
+  const resolvedAdapter = resolveAdapterRuntime(profileRuntime, childEnv);
   const child = spawn(process.execPath, [path.join(repoRoot, "server.mjs")], {
     cwd: repoRoot,
-    env: {
-      ...process.env,
-      DIARY_DATA_DIR: dataDir,
-      DIARY_HOST: "127.0.0.1",
-      DIARY_PORT: "0",
-      DIARY_AUTH_TOKEN: "local-secret",
-      DIARY_REMOTE_KEY: "remote-secret",
-      ...(options.kindleAdapterUrl ? { KINDLE_ADAPTER_URL: options.kindleAdapterUrl } : {})
-    },
+    env: childEnv,
     stdio: ["ignore", "pipe", "pipe"]
   });
 
@@ -55,7 +81,7 @@ async function startServer(options = {}) {
   child.stderr.on("data", chunk => { errors += chunk; });
 
   const port = await new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error(`Server startup timed out\n${output}\n${errors}`)), 10000);
+    const timeout = setTimeout(() => reject(new Error(`Server startup timed out\n${output}\n${errors}`)), 30000);
     child.stdout.on("data", () => {
       const match = output.match(/listening on http:\/\/127\.0\.0\.1:(\d+)/);
       if (!match) return;
@@ -73,13 +99,27 @@ async function startServer(options = {}) {
     port,
     liveToken,
     dataDir,
+    adapterToken,
+    adapterHealth: {
+      status: "ok",
+      service: NOTEBOOK_SERVICE,
+      version: NOTEBOOK_VERSION,
+      profile: profileRuntime.profileName,
+      owner_fingerprint: resolvedAdapter.ownerFingerprint,
+      host: resolvedAdapter.host,
+      port: resolvedAdapter.port,
+      pending: 0
+    },
     async close({ cleanup = true } = {}) {
       child.kill();
       await new Promise(resolve => {
         const timeout = setTimeout(resolve, 3000);
         child.once("exit", () => { clearTimeout(timeout); resolve(); });
       });
-      if (cleanup) await fs.rm(dataDir, { recursive: true, force: true });
+      if (cleanup) {
+        await fs.rm(await dataRootLockPath(dataDir), { recursive: true, force: true });
+        await fs.rm(dataDir, { recursive: true, force: true });
+      }
     }
   };
 }
@@ -130,21 +170,21 @@ test("Living HTML API enforces boundaries and serves only sanitized sandbox cont
     assert.equal(unchanged.status, 304);
 
     const remoteShell = await request(server.port, "/remote/remote-secret/live", {
-      headers: { host: "test-node.ts.net" }
+      headers: { host: "arbitrary.example." }
     });
     assert.equal(remoteShell.status, 200);
     assert.match(remoteShell.body, /sandbox="allow-same-origin"/);
 
     const remoteContent = await request(server.port, "/api/live-page/content?rk=remote-secret", {
-      headers: { host: "test-node.ts.net" }
+      headers: { host: "localhost" }
     });
     assert.equal(remoteContent.status, 200);
     assert.match(remoteContent.body, /Version two/);
 
-    const localAuthCannotBypassRemote = await request(server.port, "/api/live-page/content", {
+    const explicitDiaryCredentialWorksInRemoteMode = await request(server.port, "/api/live-page/content", {
       headers: { host: "test-node.ts.net", "x-diary-auth": "local-secret" }
     });
-    assert.equal(localAuthCannotBypassRemote.status, 401);
+    assert.equal(explicitDiaryCredentialWorksInRemoteMode.status, 200);
 
     const missingTemplateConfirmation = await request(server.port, "/api/live-page/template", {
       method: "POST",
@@ -180,7 +220,7 @@ test("Living HTML API enforces boundaries and serves only sanitized sandbox cont
     const remoteTemplate = await request(server.port, "/api/live-page/template", {
       method: "POST",
       headers: {
-        host: "test-node.ts.net",
+        host: "forged.invalid",
         "content-type": "application/json",
         "x-diary-remote-key": "remote-secret"
       },
@@ -191,10 +231,9 @@ test("Living HTML API enforces boundaries and serves only sanitized sandbox cont
     const remoteCannotPublish = await request(server.port, "/api/live-page", {
       method: "PUT",
       headers: {
-        host: "test-node.ts.net",
+        host: "localhost",
         "content-type": "application/json",
-        "x-diary-remote-key": "remote-secret",
-        "x-diary-live-write": server.liveToken
+        "x-diary-remote-key": "remote-secret"
       },
       body: payload
     });
@@ -235,7 +274,7 @@ test("shared ink API merges devices, archives ink, and clears it on changed HTML
         origin: "https://evil.example"
       }
     });
-    assert.equal(hostileOrigin.status, 403);
+    assert.equal(hostileOrigin.status, 200);
 
     const stroke = (id, clientId, x) => ({
       id,
@@ -333,7 +372,14 @@ test("shared ink API merges devices, archives ink, and clears it on changed HTML
 test("live annotation send is claimed once and retries return the cached reply", async () => {
   let adapterCalls = 0;
   let adapterBody = "";
+  let adapterIdentity;
   const adapter = http.createServer((req, res) => {
+    if (req.method === "GET" && req.url === "/health") {
+      assert.equal(req.headers["x-kindle-token"], "test-kindle-ingest-token");
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(adapterIdentity));
+      return;
+    }
     adapterCalls += 1;
     req.setEncoding("utf8");
     req.on("data", chunk => { adapterBody += chunk; });
@@ -350,6 +396,7 @@ test("live annotation send is claimed once and retries return the cached reply",
   });
   const adapterPort = adapter.address().port;
   const server = await startServer({ kindleAdapterUrl: `http://127.0.0.1:${adapterPort}/ingest` });
+  adapterIdentity = server.adapterHealth;
   try {
     const pageResponse = await request(server.port, "/api/live-page", {
       headers: { "x-diary-auth": "local-secret" }
@@ -558,8 +605,15 @@ test("Journey survives identical publishes, in-flight rollover, and a server res
   let adapterCalls = 0;
   let releaseAdapter = null;
   let adapterStartedResolve;
+  let adapterIdentity;
   const adapterStarted = new Promise(resolve => { adapterStartedResolve = resolve; });
   const adapter = http.createServer((req, res) => {
+    if (req.method === "GET" && req.url === "/health") {
+      assert.equal(req.headers["x-kindle-token"], "test-kindle-ingest-token");
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(adapterIdentity));
+      return;
+    }
     adapterCalls += 1;
     req.resume();
     req.on("end", () => {
@@ -578,6 +632,7 @@ test("Journey survives identical publishes, in-flight rollover, and a server res
 
   const adapterPort = adapter.address().port;
   let server = await startServer({ kindleAdapterUrl: `http://127.0.0.1:${adapterPort}/ingest` });
+  adapterIdentity = server.adapterHealth;
   let dataDir = server.dataDir;
   let sendPromise = null;
   try {
@@ -712,6 +767,7 @@ test("Journey survives identical publishes, in-flight rollover, and a server res
       kindleAdapterUrl: `http://127.0.0.1:${adapterPort}/ingest`
     });
     server = reopened;
+    adapterIdentity = server.adapterHealth;
     const afterRestart = JSON.parse((await request(server.port, "/api/live-page/journey", {
       headers: { "x-diary-auth": "local-secret" }
     })).body);

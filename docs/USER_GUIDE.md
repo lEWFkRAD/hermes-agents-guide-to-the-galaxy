@@ -171,7 +171,7 @@ The remaining sections are for the person installing, maintaining, auditing, or 
 The reference deployment uses:
 
 - Windows 11 on the host computer;
-- Node.js 22 or later;
+- Node.js 20 or 22;
 - Python 3.11 or later;
 - a stock Kindle Scribe browser;
 - Hermes Agent with the Kindle plugin enabled; and
@@ -184,8 +184,8 @@ The Node bridge is intentionally reachable by the Kindle. The Hermes Kindle adap
 ```text
 git clone https://github.com/lEWFkRAD/hermes-agents-guide-to-the-galaxy.git
 cd hermes-agents-guide-to-the-galaxy
-npm install
-python -m pip install pytest aiohttp
+npm ci --ignore-scripts
+python -m pip install --requirement requirements-dev.txt
 ```
 
 Install and enable the Hermes platform plugin:
@@ -195,7 +195,16 @@ hermes plugins install lEWFkRAD/hermes-agents-guide-to-the-galaxy/kindle-plugin 
 hermes gateway restart
 ```
 
-The plugin installer prompts for `KINDLE_INGEST_TOKEN`. Configure `KINDLE_ALLOWED_USERS` with the stable user identity accepted by the adapter.
+The plugin installer prompts for `KINDLE_INGEST_TOKEN`. Configure
+`KINDLE_ALLOWED_USERS` with the stable user identity accepted by the adapter.
+The companion bridge must receive the same token in its own process environment;
+the adapter health endpoint is authenticated and must match the bridge's selected
+profile, listener, and owner fingerprint before any note is dispatched.
+
+Before starting the bridge, set at least one high-entropy browser credential.
+Use `DIARY_AUTH_TOKEN` for a LAN bookmark or `DIARY_REMOTE_KEY` for the
+host-independent `/remote/<key>` bookmark. The bridge refuses to start without
+one of them.
 
 Start the bridge:
 
@@ -205,11 +214,41 @@ npm start
 
 By default, the diary listens on `0.0.0.0:8791`. The Hermes adapter remains localhost-only on its separately configured endpoint.
 
+### Multiple Hermes profiles
+
+Launch each profile's bridge with its selected `HERMES_HOME`. A named profile
+uses `<Hermes root>/profiles/<name>`; `HERMES_PROFILE_NAME` may be set as an
+additional assertion. Assign every concurrently enabled profile a distinct
+`KINDLE_INGEST_PORT` and every browser bridge a distinct `DIARY_PORT`, then keep
+`KINDLE_ADAPTER_URL`, `KINDLE_USER`, and `KINDLE_INGEST_TOKEN` consistent with
+that profile. The default data and backups become
+`<HERMES_HOME>/notebook/data` and `<HERMES_HOME>/notebook/backups`.
+
+Profile and user fields in a browser request are not routing authority. The
+adapter binds them server-side, refreshes the selected profile's secret scope,
+and refuses listener collisions or identity changes. Do not put one profile's
+token in a machine-wide environment variable used by another profile.
+
+If upgrading a v0.1 checkout that already has `data/` or `backups/`, stop the
+bridge before selecting `HERMES_HOME`. Set the destination profile environment,
+make an independent backup, and run `npm run migrate:profile`. The migration
+copies and verifies state into that profile, writes an ownership receipt, and
+leaves the legacy source untouched. Normal startup refuses an empty or populated
+profile target without a matching receipt while legacy state remains, so it
+cannot silently show a blank or unrelated notebook.
+
+Each bridge also holds an exclusive ownership claim for its canonical data
+root. A second process cannot open the same notebook, and shutdown retains the
+claim until active requests and persistence queues have quiesced. Receipts from
+another machine, boot, or PID namespace require operator review and are never
+reclaimed automatically. Backups exclude this runtime claim; the migration
+command refuses to run while any ownership artifact remains.
+
 ## Authentication and bookmarks
 
 For local-network authentication, set `DIARY_AUTH_TOKEN`, restart the bridge, and open the diary once with `?k=<token>`. The browser stores the token and sends it with later API requests.
 
-For remote Kindle access, configure `DIARY_REMOTE_KEY` before enabling Tailscale Funnel. Bookmark `/remote/<key>` on the Kindle. The complete URL is a bearer credential: anyone holding it can access protected diary content and invoke its authenticated APIs.
+For remote Kindle access, configure `DIARY_REMOTE_KEY` before enabling Tailscale Funnel. Bookmark `/remote/<key>` on the Kindle. The complete URL is a bearer credential: anyone holding it can access protected diary content and invoke its authenticated APIs. All protected requests require it or an explicit `DIARY_AUTH_TOKEN`; peer IP, `Host`, `Origin`, and forwarding headers are never authorization inputs.
 
 Rotate either secret by changing the corresponding environment variable, restarting the diary, and replacing affected bookmarks.
 
@@ -255,7 +294,7 @@ Important components:
 - Generated Live Page HTML is sanitized before storage and display.
 - The Live Page iframe does not receive script permission.
 - External requests from generated content are blocked.
-- Publisher writes require the local write token and a loopback, non-Funnel request.
+- Publisher writes require the separate local write token over a loopback socket; the remote bookmark key alone never authorizes publishing.
 - Browser credentials remain separate from Hermes adapter credentials.
 - The localhost Hermes adapter is not a public network service.
 - Redline is a suggestion-only intent and explicitly forbids applying or publishing changes.
@@ -282,11 +321,17 @@ The full environment-variable table remains in the [README](../README.md#run-it)
 | Variable | Purpose |
 | --- | --- |
 | `DIARY_HOST` / `DIARY_PORT` | Browser-facing bridge bind address and port |
-| `DIARY_AUTH_TOKEN` | Optional LAN API and handwriting access token |
-| `DIARY_REMOTE_KEY` | Required bearer key for public Funnel access |
+| `HERMES_HOME` / `HERMES_PROFILE_NAME` | Selected profile home and optional identity assertion |
+| `DIARY_DATA_DIR` / `DIARY_BACKUP_DIR` | Canonical, non-overlapping state paths; selected-profile defaults stay under `<HERMES_HOME>/notebook` |
+| `HERMES_CONFIG` | Selected profile's exact `config.yaml` path |
+| `DIARY_AUTH_TOKEN` | Required LAN API and handwriting credential unless `DIARY_REMOTE_KEY` is set |
+| `DIARY_REMOTE_KEY` | Required bearer key for remote-key-only deployments unless `DIARY_AUTH_TOKEN` is set; one of the two credentials protects every API/image request regardless of peer IP, Host, Origin, or proxy headers |
 | `DIARY_LIVE_WRITE_TOKEN` | Optional override for the local Live Page publisher secret |
 | `KINDLE_ADAPTER_URL` | Local bridge destination for the Hermes Kindle adapter |
 | `KINDLE_INGEST_TOKEN` | Shared authentication secret for adapter ingestion |
+| `KINDLE_INGEST_HOST` / `KINDLE_INGEST_PORT` | Literal loopback listener and profile-unique port |
+| `KINDLE_USER` / `KINDLE_REPLY_TIMEOUT` | Server-bound user and plain-decimal reply timeout used in owner attestation |
+| `DIARY_ADAPTER_TIMEOUT_MS` | Integer bridge timeout; defaults to the reply timeout plus a fixed 5,000 ms margin and must retain at least that margin when explicitly set |
 | `DIARY_VISION_ENDPOINT` / `DIARY_VISION_MODEL` | Handwriting vision service |
 | `DIARY_OCR_CLEANUP_ENDPOINT` / `DIARY_OCR_CLEANUP_MODEL` | Optional transcription cleanup service |
 
@@ -299,19 +344,33 @@ The repository includes Windows helpers for an always-on deployment:
 - `archive-run.cmd` creates a data archive; and
 - `Hermes-Diary-Archive.task.xml` defines scheduled archive execution.
 
-Use `npm run backup` for a manual backup. Store backup copies somewhere protected and separate from the active data directory. Backups can contain diary content and handwriting and must be handled as sensitive data.
+The included task templates are single-profile examples. Their task names are
+fixed, and stopping a Task Scheduler entry is not a multi-profile ownership
+protocol. For concurrent profiles, use separately named launchers and tasks,
+pass profile-specific environment without placing secrets in task XML or command
+arguments, and verify the old listener/bridge process is stopped before reusing
+its ports.
+
+Use `npm run backup` for a manual backup. Each run publishes a unique generation
+only after the source-before, staged, and source-after manifests match; a
+concurrent write commits nothing. Store backup copies somewhere protected and
+separate from the active data directory. Backups can contain diary content and
+handwriting and must be handled as sensitive data.
 
 ## Validation and contribution
 
 Run the repository checks before proposing a change:
 
 ```text
-npm test
+npm ci --ignore-scripts
 npm run lint
-python -m pytest test/kindle-plugin -q
+npm test
+python -m pytest test/kindle-plugin test/ci -q
 node --check server.mjs
 node --check public/app.js
 python -m compileall -q kindle-plugin
+npm audit --omit=dev --audit-level=high
+python -m pip_audit --requirement requirements-dev.txt
 ```
 
 Do not claim a physical Kindle test unless one was actually performed. All changes to `main` go through a pull request, required CI, and resolved review conversations. Follow [CONTRIBUTING.md](../CONTRIBUTING.md) and [AGENTS.md](../AGENTS.md).

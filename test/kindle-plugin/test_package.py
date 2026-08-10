@@ -24,9 +24,15 @@ def test_manifest_is_installer_ready_and_collision_free() -> None:
     assert manifest["kind"] == "platform"
     assert manifest["name"] != "kindle-platform"
     assert any(
-        entry.get("name") == "KINDLE_INGEST_TOKEN" and entry.get("secret") is True
+        entry.get("name") == "KINDLE_INGEST_TOKEN"
+        and entry.get("password") is True
+        and "secret" not in entry
         for entry in manifest["requires_env"]
     )
+    optional = {entry["name"]: entry for entry in manifest["optional_env"]}
+    assert {"KINDLE_USER", "KINDLE_HOME_CHANNEL"} <= optional.keys()
+    assert "password" not in optional["KINDLE_USER"]
+    assert "password" not in optional["KINDLE_HOME_CHANNEL"]
 
 
 def test_install_guidance_uses_persistent_plugin_installer() -> None:

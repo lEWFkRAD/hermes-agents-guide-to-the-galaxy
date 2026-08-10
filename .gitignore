@@ -1,14 +1,30 @@
 # Personal diary content — entries, handwriting images, archives. Never commit.
 data/
 backups/
+.hermes-notebook-*/
 
 # Runtime logs
 *.log
 
 # Dev/test artifacts
 test-*.png
+node_modules/
+dist/
+.venv/
+venv/
+.hermes-agent/
 __pycache__/
+*.py[cod]
 .pytest_cache/
+pytest-cache-files-*/
+.coverage
+coverage/
+
+# Local editor and operating-system state
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
 
 # Design docs that discuss firm-data routing — keep OUT of the public repo
 SPEC-*.md
@@ -16,3 +32,5 @@ SPEC-*.md
 # Channel secret + env — NEVER commit
 .kindle-token
 kindle-env.ps1
+.env
+.env.*

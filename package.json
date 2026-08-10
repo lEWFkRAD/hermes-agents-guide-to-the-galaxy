@@ -1,6 +1,6 @@
 {
   "name": "hermes-diary",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A handwriting-first Kindle Scribe notebook bridge for Hermes.",
   "private": true,
   "license": "MIT",
@@ -8,10 +8,19 @@
   "scripts": {
     "start": "node server.mjs",
     "backup": "node scripts/backup-data.mjs",
+    "migrate:profile": "node scripts/migrate-profile-data.mjs",
     "lint": "node scripts/check-style.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "check:release": "node scripts/verify-release-metadata.mjs",
+    "validate": "npm run lint && npm test && npm run check:release",
+    "build:release": "node scripts/build-release-artifacts.mjs",
+    "smoke:release": "node scripts/smoke-release-artifacts.mjs"
   },
   "engines": {
     "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lEWFkRAD/hermes-agents-guide-to-the-galaxy.git"
   }
 }

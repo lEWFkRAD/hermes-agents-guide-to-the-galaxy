@@ -26,18 +26,24 @@ screenshots, logs, and physical access to an unlocked handwriting device are not
 
 ### LAN access
 
-`DIARY_AUTH_TOKEN` protects local `/api/*` and `/img/*` routes. The initial
+The bridge refuses to start unless `DIARY_AUTH_TOKEN` or `DIARY_REMOTE_KEY` is
+configured. `DIARY_AUTH_TOKEN` protects local `/api/*` and `/img/*` routes. The initial
 `?k=<token>` link exchanges the token for an HTTP-only cookie, but that link can
 remain in browser history or screenshots. Use a high-entropy value, avoid shared
 devices, and rotate it by changing the environment variable and restarting the
-diary. Leaving the token unset is supported only on a trusted private LAN.
+diary. There is no tokenless or trusted-IP mode: peer IP, `Host`, `Origin`, and
+forwarding headers are never authorization inputs.
 
 ### Tailscale Funnel
 
 `DIARY_REMOTE_KEY` is a bearer secret embedded in the permanent
 `/remote/<key>` bookmark. Anyone who obtains the complete bookmark can read
 history, stored handwriting, and invoke authenticated diary APIs. Funnel does
-not turn this application into an identity-aware service. Disable exposure with
+not turn this application into an identity-aware service. The bridge never
+uses the client-controlled `Host` or forwarding headers as an internet trust
+boundary. Every `/api/*` and `/img/*` request must present that key or the
+explicit `DIARY_AUTH_TOKEN`; there is no IP/Host/Origin bypass. LAN clients must therefore use the remote
+bookmark/key too, or configure a separate LAN token. Disable exposure with
 `tailscale funnel --https=443 off`; revoke a leaked bookmark by changing
 `DIARY_REMOTE_KEY`, restarting the diary, and replacing the Kindle bookmark.
 
