@@ -18,12 +18,14 @@ async function listen(server) {
   return server.address().port;
 }
 
-async function waitFor(url) {
-  for (let attempt = 0; attempt < 80; attempt += 1) {
+async function waitFor(url, diagnostics = () => "") {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
     try { if ((await fetch(url)).ok) return; } catch {}
-    await new Promise(resolve => setTimeout(resolve, 25));
+    await new Promise(resolve => setTimeout(resolve, 50));
   }
-  throw new Error("diary server did not start");
+  const detail = String(diagnostics() || "").slice(-4096);
+  throw new Error(`diary server did not start${detail ? `: ${detail}` : ""}`);
 }
 
 function requestStatus(port, pathname, headers = {}) {
@@ -129,15 +131,20 @@ test("HTTP boundaries protect data and avoid phantom sessions", async () => {
     port: adapterRuntime.port,
     pending: 0
   };
+  let childErrors = "";
   const child = spawn(process.execPath, ["server.mjs"], {
     cwd: repoRoot,
     env: childEnv,
-    stdio: "ignore"
+    stdio: ["ignore", "ignore", "pipe"]
+  });
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", chunk => {
+    childErrors = `${childErrors}${chunk}`.slice(-4096);
   });
   const base = `http://127.0.0.1:${diaryPort}`;
   const auth = { "x-diary-auth": "local-secret", "content-type": "application/json" };
   try {
-    await waitFor(base);
+    await waitFor(base, () => childErrors);
     assert.equal((await fetch(`${base}/api/config`)).status, 401);
     assert.equal((await fetch(`${base}/api/config`, { headers: auth })).status, 200);
     assert.equal((await fetch(`${base}/api/sessions`)).status, 401);

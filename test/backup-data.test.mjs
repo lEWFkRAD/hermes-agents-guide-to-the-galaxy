@@ -7,6 +7,7 @@ import test from "node:test";
 import { DATA_ROOT_LOCK_DIRECTORY, isDataRootLockArtifactName } from "../lib/data-root-lock.mjs";
 
 import {
+  backupCopyRootEntry,
   isOwnedBackupGeneration,
   parseBackupKeep,
   runBackup
@@ -123,6 +124,30 @@ test("same-timestamp concurrent backups use exclusive stages and never overwrite
     }
     assert.equal((await fs.readdir(backupDir)).some(name => name.startsWith(".")), false);
   });
+});
+
+test("backup filters normalize Node 20 Windows namespaced callback paths", () => {
+  const source = String.raw`C:\Profiles\Alpha\notebook\data`;
+  assert.equal(
+    backupCopyRootEntry(
+      source,
+      String.raw`\\?\C:\Profiles\Alpha\notebook\data\.hermes-notebook-owner\owner.json`,
+      "win32"
+    ),
+    ".hermes-notebook-owner"
+  );
+  assert.equal(
+    backupCopyRootEntry(
+      String.raw`\\server\share\notebook\data`,
+      String.raw`\\?\UNC\server\share\notebook\data\.hermes-notebook-stale-id\owner.json`,
+      "win32"
+    ),
+    ".hermes-notebook-stale-id"
+  );
+  assert.equal(
+    backupCopyRootEntry(source, String.raw`\\?\C:\Profiles\Beta\private.txt`, "win32"),
+    null
+  );
 });
 
 test("backup excludes every reserved root-level data ownership artifact", async () => {

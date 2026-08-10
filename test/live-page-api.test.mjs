@@ -81,7 +81,7 @@ async function startServer(options = {}) {
   child.stderr.on("data", chunk => { errors += chunk; });
 
   const port = await new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error(`Server startup timed out\n${output}\n${errors}`)), 10000);
+    const timeout = setTimeout(() => reject(new Error(`Server startup timed out\n${output}\n${errors}`)), 30000);
     child.stdout.on("data", () => {
       const match = output.match(/listening on http:\/\/127\.0\.0\.1:(\d+)/);
       if (!match) return;

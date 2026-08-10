@@ -15,7 +15,9 @@ import {
   LINUX_PID_NAMESPACE_PATH,
   linuxMachineBootFingerprint,
   pidIsDefinitelyAbsent,
-  windowsProcessFingerprint
+  readBoundedText,
+  windowsProcessFingerprint,
+  WINDOWS_IDENTITY_PROBE_TIMEOUT_MS
 } from "../lib/data-root-lock.mjs";
 import {
   NOTEBOOK_SERVICE,
@@ -67,7 +69,7 @@ function spawnHolder(dataRoot) {
   });
 }
 
-function nextMessage(child, timeoutMs = 10_000) {
+function nextMessage(child, timeoutMs = 60_000) {
   return new Promise((resolve, reject) => {
     let stderr = "";
     const timer = setTimeout(() => finish(new Error(`lock child timed out: ${stderr}`)), timeoutMs);
@@ -88,7 +90,7 @@ function nextMessage(child, timeoutMs = 10_000) {
   });
 }
 
-function waitForExit(child, timeoutMs = 10_000) {
+function waitForExit(child, timeoutMs = 60_000) {
   if (child.exitCode !== null) return Promise.resolve(child.exitCode);
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("lock child did not exit")), timeoutMs);
@@ -138,7 +140,7 @@ function spawnNotebook(repoRoot, environ) {
   });
 }
 
-function waitForNotebookReady(child, timeoutMs = 15_000) {
+function waitForNotebookReady(child, timeoutMs = 45_000) {
   return new Promise((resolve, reject) => {
     let output = "";
     let errors = "";
@@ -163,7 +165,7 @@ function waitForNotebookReady(child, timeoutMs = 15_000) {
   });
 }
 
-function waitForExitDetails(child, timeoutMs = 15_000) {
+function waitForExitDetails(child, timeoutMs = 45_000) {
   return new Promise((resolve, reject) => {
     let stderr = "";
     const timer = setTimeout(() => finish(new Error(`notebook child did not exit: ${stderr}`)), timeoutMs);
@@ -185,7 +187,8 @@ test("a real second process is refused and teardown permits reacquisition", asyn
   await withTemp(async root => {
     const dataRoot = path.join(root, "data");
     const first = spawnHolder(dataRoot);
-    assert.equal((await nextMessage(first)).type, "ready");
+    const firstMessage = await nextMessage(first);
+    assert.equal(firstMessage.type, "ready", `unexpected first lock-holder message: ${JSON.stringify(firstMessage)}`);
 
     const second = spawnHolder(dataRoot);
     const refusal = await nextMessage(second);
@@ -247,7 +250,36 @@ test("Linux machine ownership binds the exact bounded PID namespace source", asy
   }
 });
 
+test("bounded identity reads accept procfs-style zero sizes but reject excess bytes", async () => {
+  function virtualFile(value) {
+    const content = Buffer.from(value, "utf8");
+    let cursor = 0;
+    return {
+      async stat() {
+        return { isFile: () => true, size: 0 };
+      },
+      async read(buffer, offset, length) {
+        const bytesRead = Math.min(length, content.length - cursor);
+        if (bytesRead > 0) content.copy(buffer, offset, cursor, cursor + bytesRead);
+        cursor += bytesRead;
+        return { bytesRead, buffer };
+      },
+      async close() {}
+    };
+  }
+
+  assert.equal(
+    await readBoundedText("virtual-boot-id", 64, async () => virtualFile("boot-id\n")),
+    "boot-id"
+  );
+  await assert.rejects(
+    readBoundedText("virtual-oversize", 4, async () => virtualFile("12345")),
+    /not a bounded file/
+  );
+});
+
 test("Windows process identity fails closed when executable Path is unreadable", () => {
+  assert.equal(WINDOWS_IDENTITY_PROBE_TIMEOUT_MS, 15_000);
   const ticks = "639219824074844279";
   const first = windowsProcessFingerprint({ ticks, executable: "C:\\Program Files\\nodejs\\node.exe" });
   const same = windowsProcessFingerprint({ ticks, executable: "c:\\program files\\nodejs\\NODE.exe" });

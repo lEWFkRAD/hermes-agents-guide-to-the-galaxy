@@ -31,13 +31,16 @@ test("legacy mode keeps checkout-local state only when HERMES_HOME is absent", a
     const repoRoot = path.join(root, "checkout");
     const localAppData = path.join(root, "Local App Data");
     const runtime = resolveNotebookRuntime({ environ: environment(localAppData), repoRoot });
+    const nativeHome = process.platform === "win32"
+      ? path.join(localAppData, "hermes")
+      : path.join(os.homedir(), ".hermes");
 
     assert.equal(runtime.profileSelected, false);
     assert.equal(runtime.profileName, "default");
-    assert.equal(runtime.profileHome, path.join(localAppData, "hermes"));
+    assert.equal(runtime.profileHome, nativeHome);
     assert.equal(runtime.dataDir, path.join(repoRoot, "data"));
     assert.equal(runtime.backupDir, path.join(repoRoot, "backups"));
-    assert.equal(runtime.configPath, path.join(localAppData, "hermes", "config.yaml"));
+    assert.equal(runtime.configPath, path.join(nativeHome, "config.yaml"));
   });
 });
 

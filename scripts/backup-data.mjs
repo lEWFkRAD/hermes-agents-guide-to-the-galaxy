@@ -27,6 +27,27 @@ function portableRelative(base, full) {
   return path.relative(base, full).split(path.sep).join("/");
 }
 
+function withoutWindowsNamespace(value) {
+  // Node 20's Windows fs.cp callback uses extended-length paths even when the
+  // caller supplied an ordinary drive or UNC path. Compare one representation.
+  const text = String(value);
+  if (/^\\\\\?\\UNC\\/i.test(text)) return `\\\\${text.slice(8)}`;
+  if (/^\\\\\?\\/.test(text)) return text.slice(4);
+  return text;
+}
+
+export function backupCopyRootEntry(source, candidate, platform = process.platform) {
+  const pathApi = platform === "win32" ? path.win32 : path;
+  const sourceRoot = platform === "win32" ? withoutWindowsNamespace(source) : String(source);
+  const candidatePath = platform === "win32" ? withoutWindowsNamespace(candidate) : String(candidate);
+  const relative = pathApi.relative(sourceRoot, candidatePath);
+  if (!relative) return "";
+  if (pathApi.isAbsolute(relative) || relative === ".." || relative.startsWith(`..${pathApi.sep}`)) {
+    return null;
+  }
+  return relative.split(pathApi.sep)[0] || null;
+}
+
 async function fileManifest(full, relative) {
   const handle = await fs.open(full, "r");
   try {
@@ -168,9 +189,9 @@ export async function runBackup({
     pending = path.join(pendingRoot, "payload");
     reservation = await reserveGeneration(backupRoot, stamp);
     const copyFilter = sourcePath => {
-      const relative = path.relative(source, sourcePath);
-      if (!relative) return true;
-      const [rootName] = relative.split(path.sep);
+      const rootName = backupCopyRootEntry(source, sourcePath);
+      if (rootName === "") return true;
+      if (rootName === null) return false;
       return !isDataRootLockArtifactName(rootName);
     };
     await fs.cp(source, pending, {
