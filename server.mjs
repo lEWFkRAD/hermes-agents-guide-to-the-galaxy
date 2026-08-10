@@ -7,11 +7,33 @@ import { LivePageStore, createLivePageTemplate, renderLivingDocument } from "./l
 import { LiveInkStore } from "./lib/live-page-ink.mjs";
 import { LivePageJourneyStore } from "./lib/live-page-journey.mjs";
 import { WorkspaceStore } from "./lib/workspaces.mjs";
+import { acquireDataRootLock } from "./lib/data-root-lock.mjs";
 import { fetchWithTimeout, OUTBOUND_TIMEOUTS } from "./lib/outbound.mjs";
+import {
+  createRequestAuthPolicy,
+  isRemoteBookmarkRequest
+} from "./lib/request-auth.mjs";
+import {
+  NOTEBOOK_SERVICE,
+  NOTEBOOK_VERSION,
+  resolveAdapterRuntime,
+  resolveNotebookRuntime
+} from "./lib/runtime-profile.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
-const dataDir = process.env.DIARY_DATA_DIR || path.join(__dirname, "data");
+const notebookRuntime = resolveNotebookRuntime({ repoRoot: __dirname });
+const adapterRuntime = resolveAdapterRuntime(notebookRuntime);
+const dataDir = notebookRuntime.dataDir;
+
+// Browser credentials remain separate from the profile-owned adapter secret.
+// Validate them before taking the data-root lock; peer IP, Host, Origin, and
+// forwarding headers are never authorization inputs.
+const authToken = process.env.DIARY_AUTH_TOKEN || "";
+const remoteAccessKey = process.env.DIARY_REMOTE_KEY || "";
+const requestAuth = createRequestAuthPolicy({ authToken, remoteAccessKey });
+
+const dataRootLock = await acquireDataRootLock(dataDir);
 const sessionsFile = path.join(dataDir, "sessions.json");
 const imagesDir = path.join(dataDir, "images");
 const archiveDir = path.join(dataDir, "archive");
@@ -176,66 +198,12 @@ let hermesToken = "";
 // gateway platform adapter (the real agent with MoA + tools), not a bare
 // completion. Only reachable once the Hermes gateway with the `kindle` platform
 // is running (interactive dev session). Token/URL from env; nothing secret in git.
-const kindleAdapterUrl = process.env.KINDLE_ADAPTER_URL || "http://127.0.0.1:8793/ingest";
-const kindleIngestToken = process.env.KINDLE_INGEST_TOKEN || "";
-const kindleUser = process.env.KINDLE_USER || "kindle";
+const kindleAdapterUrl = adapterRuntime.ingestUrl;
+const kindleAdapterHealthUrl = adapterRuntime.healthUrl;
+const kindleIngestToken = adapterRuntime.token;
+const kindleUser = adapterRuntime.user;
 
-// Optional shared secret. If DIARY_AUTH_TOKEN is set, /api/* requires it (via the
-// x-diary-auth header or a ?k= query param). Unset = open, exactly as before.
-// The page is served openly; only the API (which reaches models + your data) is gated.
-const authToken = process.env.DIARY_AUTH_TOKEN || "";
-const remoteAccessKey = process.env.DIARY_REMOTE_KEY || "";
 let liveWriteToken = "";
-const trustedIps = new Set(String(process.env.DIARY_TRUSTED_IPS || "")
-  .split(",")
-  .map(value => value.trim())
-  .filter(Boolean));
-
-function remoteIp(req) {
-  return String(req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
-}
-
-function isLoopback(req) {
-  const ip = remoteIp(req);
-  return ip === "127.0.0.1" || ip === "::1";
-}
-
-function isRemoteHost(req) {
-  const host = String(req.headers.host || "").split(":")[0].toLowerCase();
-  return host.endsWith(".ts.net");
-}
-
-function remoteKeyOk(req) {
-  if (!remoteAccessKey) return false;
-  if ((req.headers["x-diary-remote-key"] || "") === remoteAccessKey) return true;
-  try {
-    const url = new URL(req.url, "http://diary.local");
-    if (url.searchParams.get("rk") === remoteAccessKey) return true;
-    const match = url.pathname.match(/^\/remote\/([^/]+)(?:\/live\/?)?$/);
-    return Boolean(match && decodeURIComponent(match[1]) === remoteAccessKey);
-  } catch {
-    return false;
-  }
-}
-
-function authOk(req) {
-  if (isRemoteHost(req)) return remoteKeyOk(req);
-  if (!authToken) return true;
-  if (trustedIps.has(remoteIp(req))) return true;
-  if ((req.headers["x-diary-auth"] || "") === authToken) return true;
-  const cookies = String(req.headers.cookie || "").split(";");
-  for (const cookie of cookies) {
-    const [name, ...value] = cookie.trim().split("=");
-    try {
-      if (name === "diary_auth" && decodeURIComponent(value.join("=")) === authToken) return true;
-    } catch {}
-  }
-  try {
-    const u = new URL(req.url, "http://diary.local");
-    if (u.searchParams.get("k") === authToken) return true;
-  } catch {}
-  return false;
-}
 
 async function loadLiveWriteToken() {
   const configured = String(process.env.DIARY_LIVE_WRITE_TOKEN || "").trim();
@@ -255,17 +223,8 @@ async function loadLiveWriteToken() {
   }
 }
 
-function sameSecret(actual, expected) {
-  const left = Buffer.from(String(actual || ""));
-  const right = Buffer.from(String(expected || ""));
-  return left.length === right.length && left.length > 0 && crypto.timingSafeEqual(left, right);
-}
-
 function livePageWriteOk(req) {
-  // Funnel terminates on this machine, so its socket may appear local. The
-  // public Host boundary is therefore checked as well as the peer address.
-  if (isRemoteHost(req) || !isLoopback(req)) return false;
-  return sameSecret(req.headers["x-diary-live-write"], liveWriteToken);
+  return requestAuth.livePublisherOk(req, liveWriteToken);
 }
 
 async function loadHermesToken() {
@@ -273,13 +232,8 @@ async function loadHermesToken() {
     return process.env.HERMES_TOKEN || process.env.HERMES_API_KEY || process.env.API_SERVER_KEY;
   }
 
-  const configPath = process.env.HERMES_CONFIG || path.join(
-    process.env.LOCALAPPDATA || "",
-    "hermes",
-    "config.yaml"
-  );
   try {
-    const configText = await fs.readFile(configPath, "utf8");
+    const configText = await fs.readFile(notebookRuntime.configPath, "utf8");
     const match = configText.match(/^\s*API_SERVER_KEY:\s*['"]?([^'"\r\n#]+)['"]?\s*$/m);
     return match ? match[1].trim() : "";
   } catch {
@@ -629,6 +583,64 @@ async function callChatStream({ endpoint, model, token, text, imageDataUrl, hist
 
 // Firm-agent CHANNEL call: hand the note to the Kindle gateway platform adapter,
 // which runs the real agent (MoA + tools) and returns its reply. Non-streaming v1.
+async function readBoundedAdapterBody(response, maximum = 8192) {
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let result = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (bytes > maximum) {
+      await reader.cancel().catch(() => {});
+      throw new Error("Adapter identity verification failed");
+    }
+    result += decoder.decode(value, { stream: true });
+  }
+  return result + decoder.decode();
+}
+
+async function verifyKindleAdapterIdentity() {
+  if (!kindleIngestToken && !adapterRuntime.insecure) {
+    throw new Error("Firm agent channel identity verification failed.");
+  }
+  let response;
+  try {
+    response = await fetchWithTimeout(kindleAdapterHealthUrl, {
+      method: "GET",
+      headers: kindleIngestToken ? { "x-kindle-token": kindleIngestToken } : {}
+    }, Math.min(5000, OUTBOUND_TIMEOUTS.warm), "Kindle adapter identity check");
+  } catch {
+    throw new Error(
+      "Firm agent channel isn't running. Start the Hermes gateway with the kindle " +
+      "platform, then try the firm agent again."
+    );
+  }
+
+  let health;
+  try {
+    const raw = await readBoundedAdapterBody(response);
+    health = JSON.parse(raw);
+  } catch {
+    throw new Error("Firm agent channel identity verification failed.");
+  }
+  const matches = response.ok &&
+    health?.status === "ok" &&
+    health?.service === NOTEBOOK_SERVICE &&
+    health?.version === NOTEBOOK_VERSION &&
+    health?.profile === notebookRuntime.profileName &&
+    typeof health?.owner_fingerprint === "string" &&
+    /^[0-9a-f]{64}$/.test(health.owner_fingerprint) &&
+    health?.owner_fingerprint === adapterRuntime.ownerFingerprint &&
+    health?.host === adapterRuntime.host &&
+    health?.port === adapterRuntime.port &&
+    Number.isInteger(health?.pending) && health.pending >= 0;
+  if (!matches) throw new Error("Firm agent channel identity verification failed.");
+  return health.owner_fingerprint;
+}
+
 async function callKindleChannel({ text, chatId, rawText = false }) {
   const environment = [
     "[Kindle Scribe environment]",
@@ -642,16 +654,30 @@ async function callKindleChannel({ text, chatId, rawText = false }) {
     "Use your normal capabilities and tools when helpful; no tool or workflow is required.",
     "[/Kindle Scribe environment]"
   ].join("\n");
+  const note = String(text || "");
+  const hasEnvironment = note.startsWith("[Kindle Scribe environment]\n") &&
+    note.indexOf("[/Kindle Scribe environment]") <= 2000;
+  const outboundText = rawText || hasEnvironment ? note : `${environment}\n\n${note}`;
+  if (!outboundText.trim() || outboundText.length > 8000) {
+    throw new Error("Firm agent channel note must contain between 1 and 8000 characters.");
+  }
+  const boundedChatId = String(chatId || "").trim();
+  if (!boundedChatId || boundedChatId.length > 160) {
+    throw new Error("Firm agent channel session identifier is invalid.");
+  }
+
+  const expectedOwner = await verifyKindleAdapterIdentity();
   let response;
   try {
     response = await fetchWithTimeout(kindleAdapterUrl, {
       method: "POST",
       headers: {
         "content-type": "application/json",
+        "x-kindle-owner": expectedOwner,
         ...(kindleIngestToken ? { "x-kindle-token": kindleIngestToken } : {})
       },
-      body: JSON.stringify({ text: rawText ? text : `${environment}\n\n${text}`, user: kindleUser, chat_id: chatId })
-    }, OUTBOUND_TIMEOUTS.adapter, "Kindle adapter");
+      body: JSON.stringify({ text: outboundText, user: kindleUser, chat_id: boundedChatId })
+    }, adapterRuntime.adapterTimeoutMs, "Kindle adapter");
   } catch (error) {
     if (error?.message?.includes("timed out")) throw error;
     throw new Error(
@@ -659,15 +685,23 @@ async function callKindleChannel({ text, chatId, rawText = false }) {
       "platform, then try the firm agent again."
     );
   }
-  const raw = await response.text();
+  let raw;
+  try {
+    raw = await readBoundedAdapterBody(response, 64 * 1024);
+  } catch {
+    throw new Error("Firm agent channel returned an invalid response.");
+  }
   let json;
   try {
     json = JSON.parse(raw);
   } catch {
-    throw new Error(`Channel returned ${response.status}: ${raw.slice(0, 300)}`);
+    throw new Error("Firm agent channel returned an invalid response.");
   }
-  if (!response.ok) throw new Error(json?.error || `Channel error ${response.status}`);
-  return { text: json.reply || "" };
+  if (!response.ok) throw new Error("Firm agent channel request failed.");
+  if (typeof json?.reply !== "string" || json.reply.length > 16000) {
+    throw new Error("Firm agent channel returned an invalid response.");
+  }
+  return { text: json.reply };
 }
 
 function proposalPrompt(workspace, proposal, artifactSource) {
@@ -711,16 +745,6 @@ function parseProposalReply(text) {
     }
   }
   return { summary: raw || "Hermes returned an empty proposal", changes: [] };
-}
-
-function requestOriginOk(req) {
-  const origin = String(req.headers.origin || "").trim();
-  if (!origin) return true;
-  try {
-    return new URL(origin).host.toLowerCase() === String(req.headers.host || "").toLowerCase();
-  } catch {
-    return false;
-  }
 }
 
 async function reconcileHandwritingReadings(readings) {
@@ -944,10 +968,6 @@ function publishLivePage(input, options = {}) {
 }
 
 async function handleLivePageInkApi(req, res) {
-  if (!requestOriginOk(req)) {
-    send(res, 403, JSON.stringify({ ok: false, error: "Cross-origin ink access is not allowed" }));
-    return;
-  }
   if (req.method === "GET") {
     try {
       const ink = await withLiveState(() => liveInkStore.snapshot());
@@ -995,10 +1015,6 @@ async function handleLivePageInkApi(req, res) {
 }
 
 async function handleLivePageJourneyApi(req, res) {
-  if (!requestOriginOk(req)) {
-    send(res, 403, JSON.stringify({ ok: false, error: "Cross-origin Journey access is not allowed" }));
-    return;
-  }
   const url = new URL(req.url, "http://diary.local");
   if (req.method !== "GET") {
     send(res, 405, JSON.stringify({ ok: false, error: "Method not allowed" }), "application/json; charset=utf-8", { allow: "GET" });
@@ -1734,8 +1750,8 @@ async function serveStatic(req, res) {
   let rel;
   try { rel = decodeURIComponent(url.pathname); }
   catch { send(res, 400, "Malformed URL", "text/plain; charset=utf-8"); return; }
-  if (isRemoteHost(req) && /^\/remote\/[^/]+(?:\/live\/?)?$/.test(rel)) {
-    if (!remoteKeyOk(req)) {
+  if (isRemoteBookmarkRequest(req)) {
+    if (!requestAuth.remoteCredentialOk(req)) {
       send(res, 401, "Unauthorized", "text/plain; charset=utf-8");
       return;
     }
@@ -1757,7 +1773,15 @@ async function serveStatic(req, res) {
   }
 }
 
-const server = http.createServer(async (req, res) => {
+const activeRequestTasks = new Set();
+let shuttingDown = false;
+
+async function handleHttpRequest(req, res) {
+  if (shuttingDown) {
+    res.setHeader("connection", "close");
+    send(res, 503, JSON.stringify({ ok: false, error: "Server is shutting down" }));
+    return;
+  }
   if (req.method === "OPTIONS") {
     send(res, 204, "");
     return;
@@ -1766,7 +1790,7 @@ const server = http.createServer(async (req, res) => {
   // Kindle retains first-party cookies more reliably than localStorage.
   if (authToken && req.method === "GET") {
     const requestUrl = new URL(req.url, "http://diary.local");
-    if (requestUrl.searchParams.get("k") === authToken) {
+    if (requestAuth.diaryPairingOk(req)) {
       requestUrl.searchParams.delete("k");
       const location = requestUrl.pathname + requestUrl.search;
       res.writeHead(302, {
@@ -1778,14 +1802,13 @@ const server = http.createServer(async (req, res) => {
       return;
     }
   }
-  // Funnel is public internet: every API call and stored handwriting image
-  // requires the permanent remote bookmark key. LAN behavior remains unchanged.
+  // Every data/tool route uses one server-side credential policy. Peer IP,
+  // Host, Origin, and forwarding headers never grant browser access.
   const requestPath = new URL(req.url, "http://diary.local").pathname;
-  const protectedRemotePath = requestPath.startsWith("/api/") || requestPath.startsWith("/img/");
-  const localProtectedPath = (requestPath.startsWith("/api/") && requestPath !== "/api/config") || requestPath.startsWith("/img/");
+  const protectedPath = requestPath.startsWith("/api/") || requestPath.startsWith("/img/");
   const localLivePublish = requestPath === "/api/live-page" && req.method === "PUT" && livePageWriteOk(req);
-  if (((isRemoteHost(req) && protectedRemotePath) || (!isRemoteHost(req) && localProtectedPath)) && !authOk(req) && !localLivePublish) {
-    send(res, 401, JSON.stringify({ ok: false, error: "unauthorized — use the permanent remote diary bookmark" }));
+  if (protectedPath && !requestAuth.protectedRequestOk(req) && !localLivePublish) {
+    send(res, 401, JSON.stringify({ ok: false, error: "unauthorized - use a configured diary credential" }));
     return;
   }
   if (requestPath === "/api/config") {
@@ -1798,7 +1821,7 @@ const server = http.createServer(async (req, res) => {
       localTextModel,
       hermesEndpoint,
       hasHermesToken: Boolean(hermesToken),
-      authRequired: Boolean(authToken)
+      authRequired: requestAuth.authRequired
     }));
     return;
   }
@@ -1898,6 +1921,22 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   await serveStatic(req, res);
+}
+
+const server = http.createServer((req, res) => {
+  const task = handleHttpRequest(req, res);
+  activeRequestTasks.add(task);
+  task.catch(() => {
+    try {
+      if (!res.headersSent) {
+        send(res, 500, JSON.stringify({ ok: false, error: "Internal server error" }));
+      } else {
+        res.destroy();
+      }
+    } catch {
+      res.destroy();
+    }
+  }).finally(() => activeRequestTasks.delete(task));
 });
 
 hermesToken = await loadHermesToken();
@@ -1925,3 +1964,77 @@ server.listen(port, host, () => {
   console.log(`Hermes endpoint: ${hermesEndpoint} (${hermesToken ? "token loaded" : "no token"})`);
   console.log("Live Page publisher ready");
 });
+
+const SHUTDOWN_QUIESCE_TIMEOUT_MS = 2000;
+
+function stateWriteQueues() {
+  return [
+    sessionsSaveQueue,
+    liveStateQueue,
+    workspaceStore.saveQueue,
+    liveInkStore.writeQueue,
+    liveJourneyStore.writeQueue
+  ];
+}
+
+async function waitForStateQuiescence(timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const queues = stateWriteQueues();
+    const tasks = [...activeRequestTasks, ...queues];
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return false;
+    const settled = await Promise.race([
+      Promise.allSettled(tasks).then(() => true),
+      new Promise(resolve => setTimeout(() => resolve(false), remaining))
+    ]);
+    if (!settled) return false;
+    const currentQueues = stateWriteQueues();
+    if (activeRequestTasks.size === 0 &&
+        queues.every((queue, index) => queue === currentQueues[index])) {
+      return true;
+    }
+  }
+}
+
+async function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  try {
+    let closed = Promise.resolve();
+    if (server.listening) {
+      closed = new Promise((resolve, reject) => {
+        server.close(error => {
+          if (error) reject(error);
+          else resolve();
+        });
+      });
+      server.closeIdleConnections?.();
+    }
+    if (!(await waitForStateQuiescence(SHUTDOWN_QUIESCE_TIMEOUT_MS))) {
+      console.error("Notebook bridge shutdown timed out with active data work; retaining ownership until exit");
+      server.closeAllConnections?.();
+      process.exit(1);
+    }
+    server.closeIdleConnections?.();
+    await closed;
+    if (!(await waitForStateQuiescence(SHUTDOWN_QUIESCE_TIMEOUT_MS))) {
+      console.error("Notebook bridge shutdown did not reach final data quiescence; retaining ownership until exit");
+      process.exit(1);
+    }
+    await dataRootLock.release();
+    if (typeof process.disconnect === "function" && process.connected) process.disconnect();
+  } catch {
+    console.error("Notebook bridge could not release data ownership safely during teardown");
+    process.exitCode = 1;
+    if (typeof process.disconnect === "function" && process.connected) process.disconnect();
+  }
+}
+
+process.once("SIGINT", () => void shutdown());
+process.once("SIGTERM", () => void shutdown());
+if (process.env.NODE_ENV === "test" && typeof process.send === "function") {
+  process.on("message", message => {
+    if (message?.type === "notebook-test-shutdown") void shutdown();
+  });
+}

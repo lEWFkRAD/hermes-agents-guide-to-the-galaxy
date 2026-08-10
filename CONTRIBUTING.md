@@ -5,14 +5,20 @@ BOOX, and Android stylus companion for Hermes Agent.
 
 ## Development setup
 
-Requirements: Node.js 22+, Python 3.11+, and Git.
+Requirements: Node.js 20 or 22, Python 3.11 through 3.13, and Git.
 
 ```text
 git clone https://github.com/lEWFkRAD/hermes-agents-guide-to-the-galaxy.git
 cd hermes-agents-guide-to-the-galaxy
-npm install
-python -m pip install pytest aiohttp
+npm ci
+python -m pip install --requirement requirements-dev.txt
 ```
+
+Before running adapter tests, install the exact reviewed Hermes source using
+the commands in [`docs/HERMES_INTEGRATION.md`](docs/HERMES_INTEGRATION.md).
+The CI-equivalent installed-environment audit is
+`python scripts/audit_hermes_environment.py`; its narrow, expiring test-host
+exceptions do not apply to a release.
 
 See the README for optional Hermes adapter and runtime configuration. Never commit diary data, handwriting, tokens, client information, or logs.
 
@@ -24,7 +30,13 @@ installable localhost-only Hermes platform adapter. The native Android/BOOX
 tester client is developed with the upstream Notebook adapter in Hermes PR
 #61687. Tests live under `test/`.
 
-Run every validation command in `AGENTS.md` before submitting. State clearly which checks ran and whether a physical Kindle was used.
+Run every validation command in `AGENTS.md` before submitting, including
+`python -m pytest test/kindle-plugin test/ci -q`. State clearly which checks
+ran and whether a physical Kindle was used.
+
+The adapter integration tests run against the exact reviewed Hermes commit
+recorded in [`docs/HERMES_INTEGRATION.md`](docs/HERMES_INTEGRATION.md). Do not
+silently replace that pin with a branch name or moving tag.
 
 All changes to `main` go through a pull request. Required CI must pass and all
 review conversations must be resolved before squash or rebase merge.
@@ -45,3 +57,6 @@ Do not publicly report vulnerabilities, credentials, or private content. Use Git
 6. Do not force-push after review has started.
 
 Contributions are licensed under this repository's MIT License.
+
+Maintainers publish releases using [`RELEASING.md`](RELEASING.md). Pull
+requests must not create release tags or edit a released changelog section.

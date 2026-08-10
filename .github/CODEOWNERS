@@ -1,0 +1,8 @@
+# The maintainer reviews every change; sensitive surfaces are listed explicitly.
+* @lEWFkRAD
+/.github/ @lEWFkRAD
+/kindle-plugin/ @lEWFkRAD
+/scripts/ @lEWFkRAD
+/server.mjs @lEWFkRAD
+/SECURITY.md @lEWFkRAD
+/RELEASING.md @lEWFkRAD

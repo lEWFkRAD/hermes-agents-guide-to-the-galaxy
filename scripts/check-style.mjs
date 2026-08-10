@@ -3,7 +3,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 const ROOT = process.cwd();
-const IGNORE_DIRS = new Set([".git", "backups", "data", "node_modules"]);
+const IGNORE_DIRS = new Set([
+  ".git", ".hermes-agent", ".pytest_cache", ".venv", "backups", "data",
+  "dist", "node_modules", "venv"
+]);
 const TEXT_EXTENSIONS = new Set([
   ".cmd", ".css", ".html", ".js", ".json", ".md", ".mjs", ".ps1",
   ".vbs", ".xml", ".yml", ".yaml"
@@ -17,7 +20,8 @@ function relative(file) {
 async function walk(dir, files = []) {
   for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
     if (entry.isDirectory()) {
-      if (!IGNORE_DIRS.has(entry.name)) await walk(path.join(dir, entry.name), files);
+      const ignored = IGNORE_DIRS.has(entry.name) || entry.name.startsWith("pytest-cache-files-");
+      if (!ignored) await walk(path.join(dir, entry.name), files);
     } else if (entry.isFile()) files.push(path.join(dir, entry.name));
   }
   return files;

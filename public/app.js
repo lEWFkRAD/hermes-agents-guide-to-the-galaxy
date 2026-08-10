@@ -1,7 +1,7 @@
 (function () {
-  // --- Optional shared-secret auth ----------------------------------------
-  // If the bridge sets DIARY_AUTH_TOKEN, open the diary with ?k=<token> once;
-  // we stash it and send it on every API call. Harmless when no token is set.
+  // --- Required shared-secret auth ----------------------------------------
+  // Open the diary with ?k=<DIARY_AUTH_TOKEN> once; we stash the capability
+  // and send it on every protected API call. Remote bookmarks use their own key.
   var authTok = "";
   var remoteKey = "";
   (function () {

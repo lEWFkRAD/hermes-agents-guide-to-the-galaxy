@@ -1,0 +1,107 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Validate, attest, and publish
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: NousResearch/hermes-agent
+          ref: 03fa32c92dd445eb64c7f67434dd91b32c40701d
+          path: .hermes-agent
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20.x
+          cache: npm
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Require tagged commit on main
+        shell: pwsh
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          if ($LASTEXITCODE -ne 0) { throw "Could not fetch origin/main" }
+          node scripts/verify-release-ancestry.mjs --tag "${{ github.ref_name }}" --main-ref refs/remotes/origin/main
+          if ($LASTEXITCODE -ne 0) { throw "Release tag is not reachable from main" }
+          node scripts/verify-release-tag.mjs --tag "${{ github.ref_name }}" --event-sha "${{ github.sha }}"
+          if ($LASTEXITCODE -ne 0) { throw "Release tag identity validation failed" }
+      - run: npm ci --ignore-scripts
+      - run: python -m pip install --disable-pip-version-check --upgrade pip==26.1.2
+      - run: python -m pip install --disable-pip-version-check --requirement requirements-dev.txt
+      - run: python -m pip install --disable-pip-version-check -e .hermes-agent
+      - run: npm run validate
+      - run: python -m pytest test/kindle-plugin test/ci -q
+      - run: python -m compileall -q kindle-plugin scripts test/kindle-plugin test/ci
+      - run: npm audit --omit=dev --audit-level=high
+      - run: python -m pip_audit --requirement requirements-dev.txt
+      # Release intentionally has no advisory exceptions. The temporary CI-only
+      # Hermes test-host exception must never permit publishing a vulnerable env.
+      - run: python -m pip_audit
+      - name: Verify tag and version sources
+        id: metadata
+        shell: pwsh
+        run: |
+          $version = (& node scripts/verify-release-metadata.mjs --tag "${{ github.ref_name }}").Trim()
+          if ($LASTEXITCODE -ne 0) { throw "Release metadata validation failed" }
+          "version=$version" >> $env:GITHUB_OUTPUT
+      - name: Build and smoke-test release archives
+        shell: pwsh
+        run: |
+          node scripts/build-release-artifacts.mjs --version "${{ steps.metadata.outputs.version }}"
+          if ($LASTEXITCODE -ne 0) { throw "Release artifact build failed" }
+          node scripts/smoke-release-artifacts.mjs --version "${{ steps.metadata.outputs.version }}"
+          if ($LASTEXITCODE -ne 0) { throw "Release artifact smoke test failed" }
+          python scripts/smoke_plugin_archive.py "dist/kindle-scribe-plugin-v${{ steps.metadata.outputs.version }}.zip" --version "${{ steps.metadata.outputs.version }}"
+          if ($LASTEXITCODE -ne 0) { throw "Plugin archive syntax smoke test failed" }
+      - name: Validate whole-product archive without Git metadata
+        shell: pwsh
+        run: |
+          $version = "${{ steps.metadata.outputs.version }}"
+          $archive = Join-Path $PWD "dist/hermes-notebook-v$version.zip"
+          $smoke = Join-Path $env:RUNNER_TEMP "hermes-notebook-release-smoke"
+          New-Item -ItemType Directory -Force $smoke | Out-Null
+          Expand-Archive -LiteralPath $archive -DestinationPath $smoke
+          Push-Location (Join-Path $smoke "hermes-notebook-v$version")
+          try {
+            if (Test-Path -LiteralPath .git) { throw "Release archive unexpectedly contains Git metadata" }
+            npm ci --ignore-scripts
+            npm run validate
+          } finally {
+            Pop-Location
+          }
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: dist/*.zip
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/verify-release-tag.mjs --tag "${{ github.ref_name }}" --event-sha "${{ github.sha }}"
+          if ($LASTEXITCODE -ne 0) { throw "Remote release tag changed during the workflow" }
+          $assets = Get-ChildItem -LiteralPath dist -File | Sort-Object Name | ForEach-Object FullName
+          if ($assets.Count -ne 4) { throw "Expected two ZIPs and two checksum files" }
+          gh release create "${{ github.ref_name }}" @assets --verify-tag --title "Hermes Notebook ${{ github.ref_name }}" --notes-from-tag
