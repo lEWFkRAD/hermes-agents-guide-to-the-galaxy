@@ -1411,7 +1411,9 @@ async function handleSend(req, res) {
             imageDataUrl: body.imageDataUrl,
             mode: "vision"
           });
-          const secondReading = (secondVision.text || "").trim();
+          const secondOutput = (secondVision.text || "").trim();
+          const secondQuoted = secondOutput.match(/^You wrote:\s*["“]([^"”\n]+)["”]/i);
+          const secondReading = (secondQuoted?.[1] || secondOutput).trim();
           const readings = [rawTranscription, secondReading].filter(Boolean);
           let reconciled;
           try { reconciled = await reconcileHandwritingReadings(readings); }
