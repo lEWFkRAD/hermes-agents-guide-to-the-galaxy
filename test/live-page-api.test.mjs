@@ -792,3 +792,101 @@ test("Journey survives identical publishes, in-flight rollover, and a server res
     await new Promise(resolve => adapter.close(resolve));
   }
 });
+
+test("failed downstream delivery stays uncertain and does not dispatch on retry", async () => {
+  let adapterCalls = 0;
+  let adapterBody = "";
+  let adapterIdentity;
+  const adapter = http.createServer((req, res) => {
+    if (req.method === "GET" && req.url === "/health") {
+      assert.equal(req.headers["x-kindle-token"], "test-kindle-ingest-token");
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(adapterIdentity));
+      return;
+    }
+    adapterCalls += 1;
+    req.setEncoding("utf8");
+    req.on("data", chunk => { adapterBody += chunk; });
+    req.on("end", () => {
+      setTimeout(() => {
+        res.writeHead(502, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "synthetic response lost after dispatch" }));
+      }, 60);
+    });
+  });
+  await new Promise((resolve, reject) => {
+    adapter.once("error", reject);
+    adapter.listen(0, "127.0.0.1", resolve);
+  });
+  const adapterPort = adapter.address().port;
+  const server = await startServer({ kindleAdapterUrl: `http://127.0.0.1:${adapterPort}/ingest` });
+  adapterIdentity = server.adapterHealth;
+  try {
+    const pageResponse = await request(server.port, "/api/live-page", {
+      headers: { "x-diary-auth": "local-secret" }
+    });
+    const pageRevision = JSON.parse(pageResponse.body).page.revision;
+    const stroke = {
+      id: "stroke-send-once",
+      clientId: "device-a",
+      baseRevision: pageRevision,
+      createdAt: 1000,
+      surfaceWidth: 600,
+      surfaceHeight: 720,
+      sent: false,
+      anchors: [{
+        selector: '[data-live-region="client-total"]',
+        tag: "section",
+        text: "Top client total",
+        rect: { x: 0.1, y: 0.2, width: 0.5, height: 0.2 },
+        hitCount: 5,
+        centered: true
+      }],
+      points: [{ x: 0.1, y: 0.2 }, { x: 0.2, y: 0.3 }]
+    };
+    const added = await request(server.port, "/api/live-page/ink", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-diary-auth": "local-secret"
+      },
+      body: JSON.stringify({
+        clientId: "device-a",
+        ops: [{ id: "op-add-send-once", type: "add", stroke }]
+      })
+    });
+    assert.equal(added.status, 200);
+
+    const sendPayload = sendId => JSON.stringify({
+      target: "hermes",
+      text: "#client Use this annotation.",
+      intent: "redline",
+      source: "live-page",
+      livePageRevision: pageRevision,
+      liveInkSendId: sendId,
+      liveInkStrokeIds: ["stroke-send-once"],
+      hermesThreadId: "thread-send-once"
+    });
+    const sendRequest = sendId => request(server.port, "/api/send", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-diary-auth": "local-secret"
+      },
+      body: sendPayload(sendId)
+    });
+
+    const first = await sendRequest("send-uncertain-first");
+    assert.equal(first.status, 502);
+    const retry = await sendRequest("send-uncertain-retry");
+    assert.equal(retry.status, 409);
+    assert.match(retry.body, /uncertain/);
+    assert.equal(adapterCalls, 1);
+    const saved = JSON.parse(await fs.readFile(path.join(server.dataDir, "live-page-ink.json"), "utf8"));
+    assert.equal(saved.sends[0].status, "uncertain");
+    assert.equal(saved.strokes[0].sent, false);
+  } finally {
+    await server.close();
+    await new Promise(resolve => adapter.close(resolve));
+  }
+});
