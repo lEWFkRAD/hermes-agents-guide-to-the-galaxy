@@ -188,6 +188,8 @@ const defaultTextEndpoint = process.env.DIARY_TEXT_ENDPOINT || "http://127.0.0.1
 const defaultVisionEndpoint = process.env.DIARY_VISION_ENDPOINT || "http://127.0.0.1:8005/v1/chat/completions";
 const defaultTextModel = process.env.DIARY_TEXT_MODEL || "hermes-agent";
 const defaultVisionModel = process.env.DIARY_VISION_MODEL || "qwen3vl-8b";
+const visionToken = process.env.DIARY_VISION_TOKEN || "";
+const visionSessionKey = process.env.DIARY_VISION_SESSION_KEY || "kindle-scribe-ocr";
 const ocrCleanupEndpoint = process.env.DIARY_OCR_CLEANUP_ENDPOINT || "http://127.0.0.1:8020/v1/chat/completions";
 const ocrCleanupModel = process.env.DIARY_OCR_CLEANUP_MODEL || "qwen3.6-27b-nvfp4";
 const hermesEndpoint = process.env.HERMES_ENDPOINT || "http://127.0.0.1:8642/v1/chat/completions";
@@ -1384,7 +1386,8 @@ async function handleSend(req, res) {
           const vis = await callChat({
             endpoint: defaultVisionEndpoint,
             model: defaultVisionModel,
-            token: "",
+            token: visionToken,
+            sessionKey: visionSessionKey,
             text: isLivePageSource
               ? "This ink was written over a Live Page. Transcribe all handwriting exactly, then briefly describe any arrows, circles, underlines, or connectors and their approximate position. Output only the transcription and mark descriptions."
               : "Transcribe the handwriting exactly. Output only the transcription. Preserve proper names; Bearden is a likely firm surname and must not be split into 'Bear den'.",
@@ -1402,7 +1405,8 @@ async function handleSend(req, res) {
           const secondVision = await callChat({
             endpoint: defaultVisionEndpoint,
             model: defaultVisionModel,
-            token: "",
+            token: visionToken,
+            sessionKey: visionSessionKey,
             text: "Independently transcribe this handwriting as ordinary conversational language. Pay special attention to short words, acronyms, ampersands, names, punctuation, and spaces between words. Output only your best complete reading. Do not answer the note.",
             imageDataUrl: body.imageDataUrl,
             mode: "vision"
