@@ -1097,8 +1097,7 @@
     drawMode = !!enabled;
     if(drawMode&&!eraserMode&&!lassoMode&&!moveMode)setText(annotationToggleBtn,"Pen");
     updateBodyMode();
-    setText(drawModeBtn, drawMode ? "Done" : "Draw");
-    drawModeBtn.className = drawMode ? "active" : "";
+    drawModeBtn.className = drawMode ? "labeledTool active" : "labeledTool";
     drawModeBtn.setAttribute("aria-pressed", drawMode ? "true" : "false");
     if (!drawMode && drawing) commitCurrentStroke();
   }
