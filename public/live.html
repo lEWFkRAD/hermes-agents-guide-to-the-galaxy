@@ -11,7 +11,7 @@
         }
       } catch (error) {}
     </script>
-    <link rel="stylesheet" href="/live.css?v=16">
+    <link rel="stylesheet" href="/live.css?v=17">
     <link rel="stylesheet" href="/live-journey.css?v=3">
   </head>
   <body class="livePage viewMode toolsCollapsed">
@@ -22,6 +22,8 @@
           <button id="annotationToggleBtn" class="menuPill" type="button" aria-expanded="false" aria-controls="annotationTools">Pen</button>
           <button id="hermesToggleBtn" class="menuPill" type="button" aria-expanded="false" aria-controls="hermesTools">Pages</button>
           <button class="menuPill intentBtn" type="button" data-intent="redline" aria-label="Suggest a redline for the marked page content">Redline</button>
+          <button id="quickClearBtn" class="menuPill" type="button" aria-label="Clear all ink" disabled>Clear</button>
+          <button id="handToggleBtn" class="menuPill" type="button" aria-pressed="false" aria-label="Hand: drag to move the page">Hand</button>
           <button id="liveSendBtn" type="button" disabled>Send</button>
           <button id="moreToggleBtn" class="menuPill" type="button" aria-expanded="false" aria-controls="moreTools" aria-label="More options">&#8943;</button>
         </div>
@@ -69,9 +71,20 @@
 
 
       <section id="livingSurface" class="livingSurface">
+        <div id="liveStage" class="liveStage">
         <iframe id="liveFrame" title="Hermes HTML" sandbox="allow-same-origin" referrerpolicy="no-referrer"></iframe>
         <svg id="liveInkDisplay" aria-hidden="true" focusable="false"></svg>
         <canvas id="liveInk" aria-label="Annotate Hermes HTML"></canvas>
+        </div>
+        <div id="viewDock" class="viewDock" role="toolbar" aria-label="Zoom and move page" hidden>
+          <button id="zoomOutBtn" type="button" aria-label="Zoom out">&minus;</button>
+          <button id="zoomFitBtn" type="button" aria-label="Reset zoom and position">100%</button>
+          <button id="zoomInBtn" type="button" aria-label="Zoom in">+</button>
+          <button class="panBtn" type="button" data-pan="left" aria-label="Move view left">&larr;</button>
+          <button class="panBtn" type="button" data-pan="up" aria-label="Move view up">&uarr;</button>
+          <button class="panBtn" type="button" data-pan="down" aria-label="Move view down">&darr;</button>
+          <button class="panBtn" type="button" data-pan="right" aria-label="Move view right">&rarr;</button>
+        </div>
         <div id="liveMessage" class="liveMessage">Opening the page…</div>
         <div id="emptyHint" class="emptyHint">Write anywhere, then tap Send.<br>Hermes builds the page under your ink.</div>
       </section>
@@ -85,7 +98,7 @@
         <div id="liveHistoryList"><p>Loading…</p></div>
       </section>
     </main>
-    <script src="/live.js?v=33"></script>
+    <script src="/live.js?v=34"></script>
     <script src="/live-journey.js?v=4"></script>
   </body>
 </html>

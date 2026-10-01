@@ -30,8 +30,8 @@ test("live ink uses the same smooth curve for display and Hermes export", async 
 
 test("live shell cache-busts the current renderer and Journey assets", async () => {
   const html = await fs.readFile(path.join(repoRoot, "public", "live.html"), "utf8");
-  assert.match(html, /live\.css\?v=16/);
-  assert.match(html, /live\.js\?v=33/);
+  assert.match(html, /live\.css\?v=17/);
+  assert.match(html, /live\.js\?v=34/);
   assert.match(html, /class="labeledTool"/);
   assert.match(html, /id="hermesToggleBtn"/);
   assert.match(html, /id="moreToggleBtn"/);
@@ -256,4 +256,32 @@ test("live-page handwriting is cleaned and game shorthand is normalized", async 
   assert.match(serverSource, /ocrConfidence < 0\.65 && ocrAlternatives\.length > 0/);
   assert.match(serverSource, /ocrNeedsClarification \? \{ text: clarificationText \} : await callKindleChannel/);
   assert.match(serverSource, /kind:\s*"ocr_clarification"/);
+});
+
+test("Kindle view: one-tap clear with undo, hand tool, zoom and four-way pan", async () => {
+  const html = await fs.readFile(path.join(repoRoot, "public", "live.html"), "utf8");
+  const css = await fs.readFile(path.join(repoRoot, "public", "live.css"), "utf8");
+  const source = await fs.readFile(path.join(repoRoot, "public", "live.js"), "utf8");
+  // Fast clear lives on the main bar, one tap, with a timed undo instead of a confirm.
+  assert.match(html, /<div class="liveActions">[\s\S]*id="quickClearBtn"[\s\S]*id="liveSendBtn"/);
+  assert.match(source, /function requestClear\(\)\{if\(clearUndo\)\{restoreClearedInk\(\);return;\}/);
+  assert.doesNotMatch(source, /Tap again to clear/);
+  const restore = source.slice(source.indexOf("function restoreClearedInk"), source.indexOf("function clearInk"));
+  assert.match(restore, /queueInkOperation\("add", \{ stroke: saved\[i\] \}\)/);
+  // Page, ink display and ink canvas move together under one transform.
+  assert.match(html, /id="liveStage"[\s\S]*id="liveFrame"[\s\S]*id="liveInkDisplay"[\s\S]*id="liveInk"[\s\S]*<\/div>\s*<div id="viewDock"/);
+  for (const dir of ["up", "down", "left", "right"]) assert.match(html, new RegExp(`data-pan="${dir}"`));
+  assert.match(html, /id="zoomInBtn"/);
+  assert.match(html, /id="zoomOutBtn"/);
+  assert.match(html, /id="handToggleBtn"[^>]*aria-pressed="false"/);
+  assert.match(css, /\.liveStage \{[^}]*transform-origin: 0 0/);
+  assert.match(css, /body\.handMode #liveInk \{ pointer-events: auto/);
+  assert.match(css, /\.viewDock button \{[^}]*height: 56px/);
+  assert.doesNotMatch(css.slice(css.indexOf(".liveStage")), /transition|animation/);
+  // Hand mode pans instead of inking; ink coordinates still come from the transformed canvas rect.
+  assert.match(source, /function startInk\(event\) \{\s*if \(handMode\) return startPan\(event\);/);
+  assert.match(source, /function moveInk\(event\) \{\s*if \(panning\) return movePan\(event\);/);
+  assert.match(source, /function endInk\(event\) \{\s*if \(panning\) return endPan\(event\);/);
+  assert.match(source, /var rect = canvasEl\.getBoundingClientRect\(\);/);
+  assert.match(source, /var ZOOM_STEPS = \[0\.5, 0\.75, 1, 1\.5, 2, 3\]/);
 });
