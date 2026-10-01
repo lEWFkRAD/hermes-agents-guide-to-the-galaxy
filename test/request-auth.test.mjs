@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   createRequestAuthPolicy,
+  parseDeviceKeys,
   isRemoteBookmarkRequest
 } from "../lib/request-auth.mjs";
 
@@ -113,4 +114,20 @@ test("Live Page publishing requires its exact loopback method, path, and capabil
   assert.equal(policy.livePublisherOk({ ...valid, method: "POST" }, "publisher-secret"), false);
   assert.equal(policy.livePublisherOk({ ...valid, url: "/api/live-page/content" }, "publisher-secret"), false);
   assert.equal(policy.livePublisherOk({ ...valid, socket: { remoteAddress: "192.0.2.10" } }, "publisher-secret"), false);
+});
+
+
+test("per-device bookmarks can be revoked independently and never authorize publishing", () => {
+  const keyA = "a".repeat(40), keyB = "b".repeat(40);
+  const policy = createRequestAuthPolicy({ deviceKeys: [{ id: "lost", key: keyA, revoked: true }, { id: "desk", key: keyB }] });
+  const req = key => ({ url: "/api/sessions", headers: { "x-diary-remote-key": key }, socket: { remoteAddress: "127.0.0.1" } });
+  assert.equal(policy.protectedRequestOk(req(keyA)), false);
+  assert.equal(policy.protectedRequestOk(req(keyB)), true);
+  assert.equal(policy.livePublisherOk({ ...req(keyB), url: "/api/live-page", method: "PUT" }, "private-publisher"), false);
+  assert.throws(() => createRequestAuthPolicy({ deviceKeys: [{ id: "short", key: "weak" }] }), /invalid/);
+});
+
+
+test("invalid device configuration never prints credential material", () => {
+  assert.throws(() => parseDeviceKeys('[{"key":"PRIVATE_VALUE"'), error => error.message === "DIARY_DEVICE_KEYS must contain valid JSON");
 });

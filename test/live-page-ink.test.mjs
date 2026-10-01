@@ -268,7 +268,7 @@ test("claims a synced annotation once and replays its completed result", async (
   });
 });
 
-test("startup releases an incomplete send left by a stopped server", async () => {
+test("startup preserves an uncertain send and refuses replay with a new id", async () => {
   await withStore(async store => {
     await store.applyBatch({
       clientId: "device-a",
@@ -278,6 +278,22 @@ test("startup releases an incomplete send left by a stopped server", async () =>
 
     const reopened = new LiveInkStore(store.file.replace(/live-page-ink\.json$/, ""));
     await reopened.init();
-    assert.equal((await reopened.claimSend({ sendId: "send-retry", strokeIds: ["stroke-stranded"] })).status, "claimed");
+    await assert.rejects(reopened.claimSend({ sendId: "send-retry", strokeIds: ["stroke-stranded"], resend: true }), /Delivery is uncertain/);
+    assert.equal(reopened.snapshot().strokes.length, 1);
+    assert.equal(await reopened.releaseSend("send-stranded"), false);
+  });
+});
+
+
+test("dispatched timeout cannot release a claim or expire it into a duplicate", async () => {
+  await withStore(async store => {
+    await store.applyBatch({ clientId: "device-a", ops: [{ id: "add-timeout", type: "add", stroke: makeStroke("stroke-timeout") }] });
+    await store.claimSend({ sendId: "send-timeout", strokeIds: ["stroke-timeout"] });
+    await store.markDispatched("send-timeout");
+    store.state.sends[0].startedAt = 1;
+    assert.equal(await store.releaseSend("send-timeout"), false);
+    await assert.rejects(store.claimSend({ sendId: "new-timeout", strokeIds: ["stroke-timeout"] }), /Delivery is uncertain/);
+    await store.completeSend("send-timeout", { text: "Completed", sessionId: "a", hermesThreadId: "b" });
+    assert.equal((await store.claimSend({ sendId: "retry-timeout", strokeIds: ["stroke-timeout"] })).status, "complete");
   });
 });

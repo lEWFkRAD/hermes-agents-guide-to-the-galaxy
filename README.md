@@ -400,3 +400,24 @@ verifying `npm run backup` separately.
   `/api/config`, session history, and stored handwriting images. The key is
   carried in the permanent `/remote/<key>` Kindle bookmark rather than cookies,
   query-string persistence, or local storage.
+
+## Delivery recovery and device revocation
+
+Live Page sends are persisted as uncertain before dispatch. A timeout or bridge
+restart never silently releases them for replay, even with a new send ID or
+resend flag. Completed replies still replay from the cache. Ink remains visible;
+check Hermes history before explicitly beginning new work after an uncertain
+delivery. This protects Live Page sends; older notebook send paths do not yet
+provide the same durable delivery contract.
+
+`DIARY_DEVICE_KEYS` is an optional private JSON array of `{id,key,revoked}` entries
+(maximum 32). Generate independent random keys of at least 32 characters. Use
+`/remote/<device-key>` bookmarks. Set one entry's `revoked` to true and restart
+the owned bridge to revoke that device without rotating the others. Device keys
+must differ from each other and from legacy credentials. Legacy shared keys
+remain valid until separately removed. All device keys grant the same notebook
+access; none grants the private Live Page publisher capability. Never commit keys.
+
+Physical acceptance remains pending: stock Kindle sleep/wake, airplane-mode
+reconnect, browser reload, lost server response, and ink restoration. Desktop
+synthetic tests do not certify Kindle storage or e-ink behavior.
