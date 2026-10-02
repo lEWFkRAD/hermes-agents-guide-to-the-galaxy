@@ -30,8 +30,8 @@ test("live ink uses the same smooth curve for display and Hermes export", async 
 
 test("live shell cache-busts the current renderer and Journey assets", async () => {
   const html = await fs.readFile(path.join(repoRoot, "public", "live.html"), "utf8");
-  assert.match(html, /live\.css\?v=18/);
-  assert.match(html, /live\.js\?v=35/);
+  assert.match(html, /live\.css\?v=19/);
+  assert.match(html, /live\.js\?v=36/);
   assert.match(html, /class="labeledTool"/);
   assert.match(html, /id="hermesToggleBtn"/);
   assert.match(html, /id="moreToggleBtn"/);
@@ -66,7 +66,7 @@ test("annotation tools default to a compact Kindle-friendly reading mode", async
   assert.match(html, /id="moreTools"[^>]*hidden/);
   assert.match(html, /class="selectionAction"/);
   assert.match(html, /id="moveSelectionBtn"/);
-  assert.match(html, /id="askSelectionBtn"/);
+  assert.doesNotMatch(html, /askSelectionBtn/);
   assert.match(css, /\.labeledTool::after/);
   assert.match(html, /data-intent="redline"/);
   assert.match(css, /\.liveReply\.redlineReply/);

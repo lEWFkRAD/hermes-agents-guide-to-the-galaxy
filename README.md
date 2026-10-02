@@ -78,10 +78,9 @@ npm start
 Invoke-RestMethod http://127.0.0.1:8791/api/config -Headers @{ "X-Diary-Auth" = $env:DIARY_AUTH_TOKEN }
 ```
 
-The default notebook, local history, artifact workspaces, Live Page annotations,
+The default notebook, local history, Live Page annotations,
 Journey, Redline suggestions, and Kindle plugin are present on `main`.
-Outlook/PST support under `integrations/` is optional and requires its own local
-credentials. Native Android/BOOX code currently lives with the upstream gateway
+Native Android/BOOX code currently lives with the upstream gateway
 work in [Hermes PR #61687](https://github.com/NousResearch/hermes-agent/pull/61687).
 Remote access is optional; read the
 [deployment threat model](SECURITY.md#deployment-threat-model) first.
@@ -236,11 +235,6 @@ refuses to hide any write made later by an older checkout.
   hot by the time you hit Send, avoiding cold-start latency.
 - **Image retention** — handwriting is stored as files (not inline), and an
   optional nightly job archives images older than 7 days.
-- **Artifact workspaces (foundation release)** — import an image or sanitized
-  HTML page, draw vector annotations over it, label the annotation intent, and
-  ask the real Hermes Kindle channel for a structured change proposal. Workspace
-  state, artifact revisions, annotations, proposals, and audit events persist
-  locally under `workspaces/` in the active data directory.
 - **Hermes Live Page** — tap **Live** to open one living HTML document. Hermes
   can reshape the same page as the conversation develops: a table, visual map,
   client brief, working canvas, or any other self-contained HTML/CSS layout.

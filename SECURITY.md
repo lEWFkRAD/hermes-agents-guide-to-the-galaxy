@@ -65,10 +65,3 @@ tokens in the platform keystore before treating a native build as a public
 release. The current Android/BOOX APK is a tester build and should receive a
 limited user identity and least-privilege `platform_toolsets.kindle` policy.
 
-### Outlook integration
-
-The optional Outlook PST bridge runs locally and its token must remain outside
-the repository. Read access exposes mailbox content to the configured agent.
-Mutation operations require explicit confirmation; do not weaken that boundary
-or expose the bridge publicly. Revoke access by stopping the bridge and rotating
-or deleting its local token.
