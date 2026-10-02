@@ -257,13 +257,6 @@ refuses to hide any write made later by an older checkout.
 | `POST /api/warm` | Wake the model (fire-and-forget) |
 | `POST /api/maintenance/archive?days=N` | Archive images older than N days |
 | `GET /img/:name` | Serve a stored handwriting image (hot dir, then archive) |
-| `GET/POST /api/workspaces` | List or create artifact workspaces |
-| `GET /api/workspaces/:id` | Load a workspace with artifacts and proposals |
-| `POST /api/workspaces/:id/artifacts` | Import a sanitized HTML or image artifact |
-| `POST /api/workspaces/:id/annotations` | Save normalized vector ink and its intent |
-| `POST /api/workspaces/:id/proposals` | Create a revision-bound proposal |
-| `POST /api/workspaces/:id/proposals/:proposalId/analyze` | Ask Hermes for structured proposed changes |
-| `GET /api/artifacts/:id/content` | Render artifact content with restrictive security headers |
 | `GET /api/live-page` | Read the current revisioned Live Page; supports `If-None-Match` / `304` |
 | `GET /api/live-page/content` | Render the current sanitized HTML document inside the sandboxed Live Page |
 | `PUT /api/live-page` | Publish from loopback with the private `x-diary-live-write` token |

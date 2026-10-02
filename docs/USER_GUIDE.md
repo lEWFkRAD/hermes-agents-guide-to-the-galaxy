@@ -367,7 +367,7 @@ npm run lint
 npm test
 python -m pytest test/kindle-plugin test/ci -q
 node --check server.mjs
-node --check public/app.js
+node --check public/live.js
 python -m compileall -q kindle-plugin
 npm audit --omit=dev --audit-level=high
 python -m pip_audit --requirement requirements-dev.txt
