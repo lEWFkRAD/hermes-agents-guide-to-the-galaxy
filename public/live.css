@@ -250,7 +250,7 @@ button:disabled { color: var(--faint); cursor: default; }
   content: attr(title);
   font: 600 15px/1 var(--ui);
 }
-/* Text-only selection actions (Move, Ask) sit as a final full row. */
+/* Text-only selection action (Move) sits as a final full row. */
 .toolActions .selectionAction:not(.labeledTool) {
   height: var(--tap);
   font: 600 17px/1 var(--ui);

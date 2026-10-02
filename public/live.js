@@ -81,7 +81,6 @@
   var rotateInkBtn = document.getElementById("rotateInkBtn");
   var deleteSelectionBtn = document.getElementById("deleteSelectionBtn");
   var moveSelectionBtn = document.getElementById("moveSelectionBtn");
-  var askSelectionBtn = document.getElementById("askSelectionBtn");
   var backBtn = document.getElementById("backBtn");
   var liveNewBtn = document.getElementById("liveNewBtn");
   var liveThemeBtn = document.getElementById("liveThemeBtn");
@@ -348,7 +347,6 @@
     var selectionActions=document.getElementsByClassName?document.getElementsByClassName("selectionAction"):[]; for(var sa=0;sa<selectionActions.length;sa+=1)selectionActions[sa].hidden=!selectedStrokeIds.length;
     if(deleteSelectionBtn)deleteSelectionBtn.disabled=sendBusy||!selectedStrokeIds.length;
     if(moveSelectionBtn)moveSelectionBtn.disabled=sendBusy||!selectedStrokeIds.length;
-    if(askSelectionBtn)askSelectionBtn.disabled=sendBusy||!selectedStrokeIds.length;
   }
 
   function saveInk() {
@@ -1682,7 +1680,6 @@
   add(rotateInkBtn, "click", rotateSelection);
   add(deleteSelectionBtn, "click", deleteSelection);
   add(moveSelectionBtn, "click", toggleMoveSelection);
-  add(askSelectionBtn, "click", function(){sendInkToHermes("");});
   add(window, "focus", function () { refreshInkFromServer(true); });
   add(window, "storage", function (event) {
     var key = event && event.key ? String(event.key) : "";
