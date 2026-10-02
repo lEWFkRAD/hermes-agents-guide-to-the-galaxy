@@ -1614,6 +1614,8 @@
   add(frameEl, "load", hideMessage);
   add(annotationToggleBtn, "click", function () {
     closeMenus("pen");
+    // Pen while Hand is on = "give me the pen back": exit Hand, draw, no drawer toggle.
+    if (handMode) { setHandMode(false); setDrawMode(true); return; }
     if (!drawMode) setDrawMode(true);
     setToolsOpen(!toolsOpen);
   });
