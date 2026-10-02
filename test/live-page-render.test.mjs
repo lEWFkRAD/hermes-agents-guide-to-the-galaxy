@@ -284,4 +284,7 @@ test("Kindle view: one-tap clear with undo, hand tool, zoom and four-way pan", a
   assert.match(source, /function endInk\(event\) \{\s*if \(panning\) return endPan\(event\);/);
   assert.match(source, /var rect = canvasEl\.getBoundingClientRect\(\);/);
   assert.match(source, /var ZOOM_STEPS = \[0\.5, 0\.75, 1, 1\.5, 2, 3\]/);
+  // Regression (2026-10-02): the top-bar Pen must take the pen back from Hand mode.
+  const penHandler = source.slice(source.indexOf('add(annotationToggleBtn, "click"'), source.indexOf('add(hermesToggleBtn, "click"'));
+  assert.match(penHandler, /if \(handMode\) \{ setHandMode\(false\); setDrawMode\(true\); return; \}/);
 });
