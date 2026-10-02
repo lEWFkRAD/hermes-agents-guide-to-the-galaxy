@@ -30,8 +30,8 @@ test("live ink uses the same smooth curve for display and Hermes export", async 
 
 test("live shell cache-busts the current renderer and Journey assets", async () => {
   const html = await fs.readFile(path.join(repoRoot, "public", "live.html"), "utf8");
-  assert.match(html, /live\.css\?v=17/);
-  assert.match(html, /live\.js\?v=34/);
+  assert.match(html, /live\.css\?v=18/);
+  assert.match(html, /live\.js\?v=35/);
   assert.match(html, /class="labeledTool"/);
   assert.match(html, /id="hermesToggleBtn"/);
   assert.match(html, /id="moreToggleBtn"/);
@@ -84,17 +84,34 @@ test("annotation tools default to a compact Kindle-friendly reading mode", async
   assert.match(source, /Retire the old Hermes lane only after the replacement page exists/);
 });
 
-test("main Kindle notebook defaults to the tool-enabled Hermes channel", async () => {
-  const html = await fs.readFile(path.join(repoRoot, "public", "index.html"), "utf8");
-  const source = await fs.readFile(path.join(repoRoot, "public", "app.js"), "utf8");
+test("Send always uses the tool-enabled Hermes channel; clients cannot pick endpoints", async () => {
   const server = await fs.readFile(path.join(repoRoot, "server.mjs"), "utf8");
 
-  assert.match(html, /<option value="hermes" selected>Hermes agent \(tools enabled\)<\/option>/);
-  assert.doesNotMatch(html, /Plain assistant/);
-  assert.doesNotMatch(html, /Local models/);
-  assert.doesNotMatch(html, /Custom OpenAI-compatible endpoint/);
-  assert.match(source, /savedTarget !== "hermes"/);
   assert.match(server, /const target = "hermes";/);
+  assert.doesNotMatch(server, /body\.endpoint/);
+  assert.doesNotMatch(server, /body\.token/);
+  assert.doesNotMatch(server, /localTextEndpoint/);
+  await assert.rejects(fs.access(path.join(repoRoot, "public", "app.js")));
+});
+
+test("an unconfirmed Send never locks the pen", async () => {
+  const source = await fs.readFile(path.join(repoRoot, "public", "live.js"), "utf8");
+  const startInk = source.slice(source.indexOf("function startInk"), source.indexOf("function appendInkPoint"));
+
+  assert.match(startInk, /if \(!drawMode \|\| sendBusy\) return true;/);
+  assert.doesNotMatch(startInk, /pendingInkSend/);
+  assert.match(source, /drawModeBtn\.disabled = sendBusy;/);
+  assert.match(source, /Tap Clear to start over; Pen still works\./);
+});
+
+test("an open Kindle tab reloads itself when the bridge serves new client code", async () => {
+  const source = await fs.readFile(path.join(repoRoot, "public", "live.js"), "utf8");
+  const server = await fs.readFile(path.join(repoRoot, "server.mjs"), "utf8");
+
+  assert.match(server, /"x-live-client-build": await liveClientBuild\(\)/);
+  assert.match(source, /getResponseHeader\("x-live-client-build"\)/);
+  assert.match(source, /if \(drawing \|\| sendBusy \|\| panning/);
+  assert.match(source, /hasPendingAddOperations\(\)\) return;\s*clientBuildStale = false;\s*window\.location\.reload\(\);/);
 });
 
 test("successful Send marks exact ink processed but keeps it visible until HTML changes", async () => {
@@ -213,7 +230,7 @@ test("streamed live annotations are claimed before Hermes runs", async () => {
   const server = await fs.readFile(path.join(repoRoot, "server.mjs"), "utf8");
   const claimGate = server.slice(
     server.indexOf("if (isLivePageSource && target"),
-    server.indexOf("let endpoint = body.endpoint")
+    server.indexOf("// Find an existing session, but do NOT register")
   );
 
   assert.match(claimGate, /liveInkSendId && liveInkStrokeIds\.length/);

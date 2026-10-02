@@ -6,7 +6,6 @@ import { fileURLToPath } from "node:url";
 import { LivePageStore, createLivePageTemplate, renderLivingDocument } from "./lib/live-page.mjs";
 import { LiveInkStore } from "./lib/live-page-ink.mjs";
 import { LivePageJourneyStore } from "./lib/live-page-journey.mjs";
-import { WorkspaceStore } from "./lib/workspaces.mjs";
 import { acquireDataRootLock } from "./lib/data-root-lock.mjs";
 import { fetchWithTimeout, OUTBOUND_TIMEOUTS } from "./lib/outbound.mjs";
 import {
@@ -23,6 +22,22 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
+const LIVE_CLIENT_FILES = ["live.html", "live.js", "live.css", "live-journey.js", "live-journey.css"];
+
+// Fingerprint of the Kindle client bundle, recomputed per poll so an open
+// Kindle tab learns about new client code without a bridge restart.
+async function liveClientBuild() {
+  const hash = crypto.createHash("sha256");
+  for (const name of LIVE_CLIENT_FILES) {
+    try {
+      const stat = await fs.stat(path.join(publicDir, name));
+      hash.update(`${name}:${stat.size}:${Math.trunc(stat.mtimeMs)};`);
+    } catch {
+      hash.update(`${name}:missing;`);
+    }
+  }
+  return hash.digest("hex").slice(0, 16);
+}
 const notebookRuntime = resolveNotebookRuntime({ repoRoot: __dirname });
 const adapterRuntime = resolveAdapterRuntime(notebookRuntime);
 const dataDir = notebookRuntime.dataDir;
@@ -38,7 +53,6 @@ const dataRootLock = await acquireDataRootLock(dataDir);
 const sessionsFile = path.join(dataDir, "sessions.json");
 const imagesDir = path.join(dataDir, "images");
 const archiveDir = path.join(dataDir, "archive");
-const workspaceStore = new WorkspaceStore(dataDir);
 const livePageStore = new LivePageStore(dataDir);
 const liveInkStore = new LiveInkStore(dataDir);
 const liveJourneyStore = new LivePageJourneyStore(dataDir);
@@ -193,8 +207,6 @@ const visionSessionKey = process.env.DIARY_VISION_SESSION_KEY || "kindle-scribe-
 const ocrCleanupEndpoint = process.env.DIARY_OCR_CLEANUP_ENDPOINT || "http://127.0.0.1:8020/v1/chat/completions";
 const ocrCleanupModel = process.env.DIARY_OCR_CLEANUP_MODEL || "qwen3.6-27b-nvfp4";
 const hermesEndpoint = process.env.HERMES_ENDPOINT || "http://127.0.0.1:8642/v1/chat/completions";
-const localTextEndpoint = process.env.DIARY_LOCAL_TEXT_ENDPOINT || "http://127.0.0.1:8004/v1/chat/completions";
-const localTextModel = process.env.DIARY_LOCAL_TEXT_MODEL || "gpt-oss-20b";
 let hermesToken = "";
 
 // Firm-agent CHANNEL: the "Hermes firm agent" target routes here — to the Kindle
@@ -322,10 +334,6 @@ function reconcileLivePageReply(text, pageChanged, page) {
 }
 
 const KINDLE_INTENTS = new Map([
-  ["summarize", "Summarize the current page or note. Start with the answer in one short paragraph, then add only the most useful detail."],
-  ["tasks", "Extract tasks. Group them by owner, due date, and uncertainty. If a task is inferred from handwriting, label it inferred."],
-  ["email", "Draft a concise email from the note or marked page. Do not send it. Put the draft first, then a short note about assumptions."],
-  ["workpaper", "Create a workpaper-ready note: facts, evidence, open items, risks, and next action. Keep amounts, dates, and names exact."],
   ["redline", "Return exactly one concise, non-destructive proposed replacement for the marked page content. If replacement is inappropriate, return exactly one concise rationale instead. Anchor the suggestion in the marked DOM target and page text. Do not apply, publish, edit, or otherwise modify the page or its original HTML and ink."]
 ]);
 
@@ -523,67 +531,6 @@ async function cleanHandwritingTranscription(rawText) {
   return choiceText(json).replace(/^['"]|['"]$/g, "").trim();
 }
 
-// Streaming variant: parses the gateway's OpenAI SSE and fires onToken(delta)
-// as each fragment arrives. Returns the full accumulated text at the end.
-async function callChatStream({ endpoint, model, token, text, imageDataUrl, history = [], sessionKey = "kindle-scribe-diary", intent = "", onToken }) {
-  const response = await fetchWithTimeout(endpoint, {
-    method: "POST",
-    headers: chatHeaders(token, sessionKey),
-    body: JSON.stringify({
-      model,
-      temperature: 0.35,
-      max_tokens: 900,
-      stream: true,
-      messages: buildMessages({ text, imageDataUrl, history, intent })
-    })
-  }, OUTBOUND_TIMEOUTS.stream, "streaming model request");
-
-  if (!response.ok || !response.body) {
-    const raw = await response.text().catch(() => "");
-    let msg;
-    try {
-      msg = JSON.parse(raw)?.error?.message;
-    } catch {
-      msg = "";
-    }
-    throw new Error(msg || `Model returned ${response.status}: ${raw.slice(0, 400)}`);
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let full = "";
-  let stop = false;
-
-  while (!stop) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let nl;
-    while ((nl = buffer.indexOf("\n")) >= 0) {
-      const line = buffer.slice(0, nl).trim();
-      buffer = buffer.slice(nl + 1);
-      if (!line.startsWith("data:")) continue;
-      const payload = line.slice(5).trim();
-      if (payload === "[DONE]") {
-        stop = true;
-        break;
-      }
-      try {
-        const obj = JSON.parse(payload);
-        const delta = obj?.choices?.[0]?.delta?.content;
-        if (delta) {
-          full += delta;
-          onToken(delta);
-        }
-      } catch {
-        /* ignore keep-alives / partial JSON */
-      }
-    }
-  }
-  return { text: full };
-}
-
 // Firm-agent CHANNEL call: hand the note to the Kindle gateway platform adapter,
 // which runs the real agent (MoA + tools) and returns its reply. Non-streaming v1.
 async function readBoundedAdapterBody(response, maximum = 8192) {
@@ -705,49 +652,6 @@ async function callKindleChannel({ text, chatId, rawText = false }) {
     throw new Error("Firm agent channel returned an invalid response.");
   }
   return { text: json.reply };
-}
-
-function proposalPrompt(workspace, proposal, artifactSource) {
-  const annotations = workspace.annotations
-    .filter(item => item.artifactId === proposal.artifactId)
-    .map(item => ({
-      id: item.id,
-      intent: item.intent,
-      transcription: item.transcription,
-      anchor: item.anchor
-    }));
-  return [
-    "You are reviewing an annotated artifact from a Kindle Scribe workspace.",
-    "Analyze the user's instruction and annotations. Do not modify files or take external actions.",
-    "Return JSON only with this shape:",
-    '{"summary":"short review","changes":[{"kind":"comment|html-edit|task","target":"anchor or selector","description":"specific proposed change","replacement":"optional replacement text"}]}',
-    `Workspace mode: ${workspace.mode}`,
-    `Artifact: ${proposal.artifactId}`,
-    `Instruction: ${proposal.instruction}`,
-    `Annotations: ${JSON.stringify(annotations)}`,
-    artifactSource ? `Artifact source:\n${artifactSource.slice(0, 30000)}` : "The artifact is an image; rely on the annotation text and anchors provided."
-  ].join("\n\n");
-}
-
-function parseProposalReply(text) {
-  const raw = String(text || "").trim();
-  const unfenced = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-  const candidates = [unfenced];
-  const firstBrace = unfenced.indexOf("{");
-  const lastBrace = unfenced.lastIndexOf("}");
-  if (firstBrace >= 0 && lastBrace > firstBrace) candidates.push(unfenced.slice(firstBrace, lastBrace + 1));
-  for (const candidate of candidates) {
-    try {
-      const parsed = JSON.parse(candidate);
-      return {
-        summary: String(parsed.summary || "Proposal ready"),
-        changes: Array.isArray(parsed.changes) ? parsed.changes : []
-      };
-    } catch {
-      /* try the next candidate */
-    }
-  }
-  return { summary: raw || "Hermes returned an empty proposal", changes: [] };
 }
 
 async function reconcileHandwritingReadings(readings) {
@@ -1131,11 +1035,12 @@ async function handleLivePageApi(req, res) {
       return;
     }
     const etag = `"${page.revision}"`;
+    const clientBuildHeader = { "x-live-client-build": await liveClientBuild() };
     if (req.headers["if-none-match"] === etag) {
-      send(res, 304, "", "application/json; charset=utf-8", { etag });
+      send(res, 304, "", "application/json; charset=utf-8", { etag, ...clientBuildHeader });
       return;
     }
-    send(res, 200, JSON.stringify({ ok: true, page }), "application/json; charset=utf-8", { etag });
+    send(res, 200, JSON.stringify({ ok: true, page }), "application/json; charset=utf-8", { etag, ...clientBuildHeader });
     return;
   }
 
@@ -1162,102 +1067,6 @@ async function handleLivePageApi(req, res) {
   send(res, 405, JSON.stringify({ ok: false, error: "Method not allowed" }), "application/json; charset=utf-8", {
     allow: "GET, PUT"
   });
-}
-
-async function handleWorkspaceApi(req, res) {
-  try {
-    const url = new URL(req.url, "http://diary.local");
-    const parts = url.pathname.split("/").filter(Boolean);
-    if (parts.length === 2) {
-      if (req.method === "GET") {
-        send(res, 200, JSON.stringify({ ok: true, workspaces: workspaceStore.list() }));
-        return;
-      }
-      if (req.method === "POST") {
-        const workspace = await workspaceStore.create(JSON.parse(await readBody(req) || "{}"));
-        send(res, 201, JSON.stringify({ ok: true, workspace }));
-        return;
-      }
-    }
-
-    const workspaceId = parts[2];
-    const workspace = workspaceStore.get(workspaceId);
-    if (!workspace) {
-      send(res, 404, JSON.stringify({ ok: false, error: "Workspace not found" }));
-      return;
-    }
-    if (parts.length === 3 && req.method === "GET") {
-      send(res, 200, JSON.stringify({ ok: true, workspace }));
-      return;
-    }
-
-    const action = parts[3];
-    const body = req.method === "POST" ? JSON.parse(await readBody(req) || "{}") : {};
-    if (action === "artifacts" && req.method === "POST") {
-      const artifact = await workspaceStore.addArtifact(workspaceId, body);
-      send(res, 201, JSON.stringify({ ok: true, artifact, workspace: workspaceStore.get(workspaceId) }));
-      return;
-    }
-    if (action === "annotations" && req.method === "POST") {
-      const annotation = await workspaceStore.addAnnotation(workspaceId, body);
-      send(res, 201, JSON.stringify({ ok: true, annotation, workspace: workspaceStore.get(workspaceId) }));
-      return;
-    }
-    if (action === "proposals" && parts.length === 4 && req.method === "POST") {
-      const proposal = await workspaceStore.createProposal(workspaceId, body);
-      send(res, 201, JSON.stringify({ ok: true, proposal, workspace: workspaceStore.get(workspaceId) }));
-      return;
-    }
-    if (action === "proposals" && parts[5] === "analyze" && req.method === "POST") {
-      const proposalId = parts[4];
-      const rawWorkspace = workspaceStore.raw(workspaceId);
-      const proposal = rawWorkspace.proposals.find(item => item.id === proposalId);
-      if (!proposal) throw new Error("Proposal not found");
-      const found = workspaceStore.findArtifact(proposal.artifactId);
-      let artifactSource = "";
-      if (found?.artifact.type === "html") {
-        artifactSource = (await fs.readFile(found.artifact.storagePath, "utf8"));
-      }
-      try {
-        const result = await callKindleChannel({
-          text: proposalPrompt(rawWorkspace, proposal, artifactSource),
-          chatId: `workspace-${workspaceId}-${proposalId}`
-        });
-        const completed = await workspaceStore.completeProposal(workspaceId, proposalId, parseProposalReply(result.text));
-        send(res, 200, JSON.stringify({ ok: true, proposal: completed, workspace: workspaceStore.get(workspaceId) }));
-      } catch (error) {
-        const failed = await workspaceStore.completeProposal(workspaceId, proposalId, { error: error.message });
-        send(res, 502, JSON.stringify({ ok: false, error: error.message, proposal: failed }));
-      }
-      return;
-    }
-    send(res, 404, JSON.stringify({ ok: false, error: "Workspace route not found" }));
-  } catch (error) {
-    send(res, 400, JSON.stringify({ ok: false, error: error.message }));
-  }
-}
-
-async function serveArtifact(req, res) {
-  const url = new URL(req.url, "http://diary.local");
-  const match = /^\/api\/artifacts\/([^/]+)\/content$/.exec(url.pathname);
-  if (!match) {
-    send(res, 404, JSON.stringify({ ok: false, error: "Artifact not found" }));
-    return;
-  }
-  const result = await workspaceStore.readArtifact(match[1]);
-  if (!result) {
-    send(res, 404, JSON.stringify({ ok: false, error: "Artifact not found" }));
-    return;
-  }
-  res.writeHead(200, {
-    "content-type": result.artifact.contentType,
-    "cache-control": "no-store",
-    "content-security-policy": result.artifact.type === "html"
-      ? "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:"
-      : "default-src 'none'",
-    "x-content-type-options": "nosniff"
-  });
-  res.end(result.buffer);
 }
 
 async function handleSend(req, res) {
@@ -1301,27 +1110,6 @@ async function handleSend(req, res) {
       }
     }
 
-    let endpoint = body.endpoint?.trim();
-    let model = body.model?.trim();
-    let token = body.token?.trim() || "";
-    let mode = target;
-
-    if (!endpoint) {
-      if (target === "hermes") {
-        // Explicit opt-in to the firm MoA agent persona.
-        endpoint = hermesEndpoint;
-        token ||= hermesToken;
-        model ||= defaultTextModel;
-        mode = "hermes";
-      } else {
-        // Default: a plain assistant. Text goes to the local text model, ink to
-        // the local vision model. No firm-agent persona, no tool delusions.
-        endpoint = hasInk ? defaultVisionEndpoint : localTextEndpoint;
-        model ||= hasInk ? defaultVisionModel : localTextModel;
-        mode = hasInk ? "vision" : "plain";
-      }
-    }
-
     // Find an existing session, but do NOT register a new one yet — if the
     // Hermes call fails, we must not leave a phantom empty entry in History.
     let session = body.sessionId ? sessions.find(s => s.id === body.sessionId) : null;
@@ -1339,13 +1127,6 @@ async function handleSend(req, res) {
       ? body.hermesThreadId
       : "";
     if (!session.channelThreadId) session.channelThreadId = requestedHermesThreadId || session.id;
-
-    const history = session.messages.slice(-12).map(m => ({
-      role: m.role,
-      content: m.role === "user"
-        ? (m.text || "[handwritten diary entry — see your transcription in the next reply]")
-        : m.text
-    }));
 
     function commitSession(replyText, transcription = "", rawTranscription = "", tags = []) {
       if (isNewSession) sessions.unshift(session);
@@ -1562,137 +1343,6 @@ async function handleSend(req, res) {
       return;
     }
 
-    // ---- Streaming path: relay tokens live to the client -------------------
-    if (body.stream) {
-      const startedStream = Date.now();
-      res.writeHead(200, {
-        "content-type": "text/plain; charset=utf-8",
-        "cache-control": "no-store",
-        "x-accel-buffering": "no",
-        "access-control-allow-origin": "*"
-      });
-      // First line = metadata the client needs immediately (session id).
-      res.write(JSON.stringify({ sessionId: session.id, hermesThreadId: session.channelThreadId }) + "\n");
-
-      let result;
-      try {
-        result = await callChatStream({
-          endpoint,
-          model,
-          token,
-          text: body.text || "",
-          imageDataUrl: hasInk ? body.imageDataUrl : "",
-          history,
-          sessionKey: "kindle-scribe-diary-" + session.id,
-          intent,
-          onToken: (t) => res.write(t)
-        });
-      } catch (error) {
-        logSend({ kind: "error", streaming: true, error: error.message });
-        res.write("" + JSON.stringify({ error: error.message }));
-        res.end();
-        return;
-      }
-
-      // An empty reply (transient gateway hiccup) must not be committed or
-      // shown as a blank page — surface it as a retryable error instead.
-      if (!result.text || !result.text.trim()) {
-        logSend({ kind: "error", streaming: true, error: "empty reply", durationMs: Date.now() - startedStream });
-        res.write(RS + JSON.stringify({ error: "Hermes returned an empty reply. Tap Send to try again." }));
-        res.end();
-        return;
-      }
-
-      const tags = extractNotebookTags(body.text || "");
-      await commitSession(result.text, "", "", tags);
-      logSend({
-        kind: "send",
-        streaming: true,
-        target,
-        model,
-        sessionId: session.id,
-        historyTurns: history.length,
-        textChars: (body.text || "").length,
-        imageBytes,
-        responseChars: result.text.length,
-        durationMs: Date.now() - startedStream,
-        intent,
-        tags
-      });
-      // Trailer (after a record-separator) carries the final title.
-      res.write("" + JSON.stringify({ title: session.title }));
-      res.end();
-      return;
-    }
-    // ---- Non-streaming path (unchanged) ------------------------------------
-
-    const startedAt = Date.now();
-    const result = await callChat({
-      endpoint,
-      model,
-      token,
-      text: body.text || "",
-      imageDataUrl: hasInk ? body.imageDataUrl : "",
-      mode,
-      history,
-      sessionKey: "kindle-scribe-diary-" + session.id,
-      intent
-    });
-
-    // Don't commit or return an empty reply — surface it as retryable.
-    if (!result.text || !result.text.trim()) {
-      logSend({ kind: "error", error: "empty reply", durationMs: Date.now() - startedAt });
-      send(res, 502, JSON.stringify({ ok: false, error: "Hermes returned an empty reply. Tap Send to try again." }));
-      return;
-    }
-
-    // The call succeeded — now it's safe to register a brand-new session.
-    if (isNewSession) sessions.unshift(session);
-
-    // Persist the handwriting as a file and store only its URL in the session.
-    const inkRef = hasInk ? await writeInkFile(session.id, body.imageDataUrl) : "";
-
-    const now = new Date().toISOString();
-    const tags = extractNotebookTags(body.text || "");
-    session.messages.push({
-      role: "user",
-      text: body.text || "",
-      tags,
-      intent,
-      ink: inkRef,
-      time: now
-    });
-    session.messages.push({ role: "assistant", text: result.text, time: now });
-    if (!session.title) {
-      const wrote = result.text.match(/^You wrote:\s*"([^"\n]{1,60})/i);
-      session.title = (body.text || (wrote && wrote[1]) || "Handwritten entry").slice(0, 60);
-    }
-    session.updatedAt = now;
-    await saveSessions();
-
-    logSend({
-      kind: "send",
-      target,
-      mode: result.mode,
-      model: result.model,
-      endpoint: result.endpoint,
-      sessionId: session.id,
-      historyTurns: history.length,
-      textChars: (body.text || "").length,
-      imageBytes,
-      responseChars: result.text.length,
-      durationMs: Date.now() - startedAt,
-      intent,
-      tags
-    });
-    send(res, 200, JSON.stringify({
-      ok: true,
-      ...result,
-      sessionId: session.id,
-      title: session.title,
-      tags,
-      intent
-    }));
   } catch (error) {
     if (liveInkClaimId) await withLiveState(() => liveInkStore.releaseSend(liveInkClaimId)).catch(() => {});
     logSend({ kind: "error", error: error.message });
@@ -1827,8 +1477,6 @@ async function handleHttpRequest(req, res) {
       defaultVisionEndpoint,
       defaultTextModel,
       defaultVisionModel,
-      localTextEndpoint,
-      localTextModel,
       hermesEndpoint,
       hasHermesToken: Boolean(hermesToken),
       authRequired: requestAuth.authRequired
@@ -1900,14 +1548,6 @@ async function handleHttpRequest(req, res) {
     }
     return;
   }
-  if (req.url.startsWith("/api/workspaces")) {
-    await handleWorkspaceApi(req, res);
-    return;
-  }
-  if (req.url.startsWith("/api/artifacts/")) {
-    await serveArtifact(req, res);
-    return;
-  }
   if (req.url.startsWith("/api/sessions")) {
     await handleSessions(req, res);
     return;
@@ -1952,7 +1592,6 @@ const server = http.createServer((req, res) => {
 hermesToken = await loadHermesToken();
 await loadSessions();
 await migrateInlineImages();
-await workspaceStore.init();
 await livePageStore.init();
 await liveInkStore.init();
 await liveJourneyStore.init();
@@ -1981,7 +1620,6 @@ function stateWriteQueues() {
   return [
     sessionsSaveQueue,
     liveStateQueue,
-    workspaceStore.saveQueue,
     liveInkStore.writeQueue,
     liveJourneyStore.writeQueue
   ];
