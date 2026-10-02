@@ -72,7 +72,6 @@
   var displayEl = document.getElementById("liveInkDisplay");
   var drawModeBtn = document.getElementById("drawModeBtn");
   var undoInkBtn = document.getElementById("undoInkBtn");
-  var sendInkBtn = document.getElementById("sendInkBtn");
   var intentBtns = document.getElementsByClassName ? document.getElementsByClassName("intentBtn") : [];
   var clearInkBtn = document.getElementById("clearInkBtn");
   var eraserInkBtn = document.getElementById("eraserInkBtn");
@@ -84,7 +83,6 @@
   var moveSelectionBtn = document.getElementById("moveSelectionBtn");
   var askSelectionBtn = document.getElementById("askSelectionBtn");
   var backBtn = document.getElementById("backBtn");
-  var liveHistoryBtn = document.getElementById("liveHistoryBtn");
   var liveNewBtn = document.getElementById("liveNewBtn");
   var liveThemeBtn = document.getElementById("liveThemeBtn");
   var hermesToggleBtn = document.getElementById("hermesToggleBtn");
@@ -122,7 +120,6 @@
   var lassoing = false;
   var lassoPoints = [];
   var selectedStrokeIds = [];
-  var clearArmed = false, clearTimer = null;
   var moveMode=false,movingSelection=false,moveStart=null,moveOriginals=[];
   var movePreviewFrame=null,movePreviewPoint=null;
   var streamPaintTimer=null,lastStreamPaint="";
@@ -342,9 +339,8 @@
     var cannotClear = sendBusy || (!strokes.length && !pendingInkSend && !clearUndo);
     clearInkBtn.disabled = cannotClear;
     if (quickClearBtn) quickClearBtn.disabled = cannotClear;
-    drawModeBtn.disabled = sendBusy || !!pendingInkSend;
+    drawModeBtn.disabled = sendBusy;
     var cannotSend = sendBusy || !inkSyncReady || hasPendingAddOperations() || (!pendingInkSend && !strokes.length);
-    if (sendInkBtn) sendInkBtn.disabled = cannotSend;
     if (liveSendBtn) liveSendBtn.disabled = cannotSend;
     if (copyInkBtn) copyInkBtn.disabled = sendBusy || !strokes.length;
     if (pasteInkBtn) pasteInkBtn.disabled = sendBusy || !inkClipboard.length;
@@ -923,7 +919,7 @@
 
   function startInk(event) {
     if (handMode) return startPan(event);
-    if (!drawMode || sendBusy || pendingInkSend) return true;
+    if (!drawMode || sendBusy) return true;
     emptyHintDismissed = true;
     if (emptyHintEl) emptyHintEl.hidden = true;
     // Fast pen input can deliver the next down before the previous up is
@@ -1319,7 +1315,6 @@
 
   function setSendBusy(busy) {
     sendBusy = !!busy;
-    setText(sendInkBtn, sendBusy ? "Working..." : "Send");
     setText(liveSendBtn, sendBusy ? "Working..." : "Send");
     updateInkButtons();
   }
@@ -1376,9 +1371,6 @@
 
   function startProgress(intent) {
     var phases = ["Received", "Reading the page", "Thinking", "Using Hermes", "Checking for HTML updates"];
-    if (intent === "tasks") phases = ["Received", "Finding tasks", "Using Hermes", "Checking the page"];
-    if (intent === "email") phases = ["Received", "Drafting", "Using Hermes", "Checking the page"];
-    if (intent === "workpaper") phases = ["Received", "Reading marks", "Shaping workpaper notes", "Checking the page"];
     if (intent === "redline") phases = ["Received", "Reading the marked content", "Drafting one suggestion", "Checking the page"];
     progressIndex = 0;
     if (progressTimer) window.clearInterval(progressTimer);
@@ -1446,6 +1438,25 @@
     pollTimer = window.setTimeout(function () { loadMetadata(false); }, (typeof document.hidden !== "undefined" && document.hidden) ? 30000 : 10000);
   }
 
+  // A Kindle tab can stay open for days. When the bridge starts serving new
+  // client code, reload once the page is idle so fixes actually reach the pen.
+  var clientBuild = "", clientBuildStale = false;
+  function noteClientBuild(xhr) {
+    var build = "";
+    try { build = xhr.getResponseHeader("x-live-client-build") || ""; } catch (error) {}
+    if (!build) return;
+    if (!clientBuild) clientBuild = build;
+    else if (build !== clientBuild) clientBuildStale = true;
+    reloadIfStaleAndIdle();
+  }
+  function reloadIfStaleAndIdle() {
+    if (!clientBuildStale) return;
+    if (drawing || sendBusy || panning || movingSelection || lassoing || newPageBusy || clearUndo) return;
+    if (!replyEl.hidden || !liveHistoryEl.hidden || hasPendingAddOperations()) return;
+    clientBuildStale = false;
+    window.location.reload();
+  }
+
   function loadMetadata(force) {
     if (loading) return;
     loading = true;
@@ -1458,6 +1469,7 @@
     xhr.onreadystatechange = function () {
       if (xhr.readyState !== 4) return;
       loading = false;
+      noteClientBuild(xhr);
       if (xhr.status === 304) {
         schedulePoll();
         return;
@@ -1488,10 +1500,6 @@
     xhr.send(null);
   }
   function intentText(intent) {
-    if (intent === "summarize") return "Summarize the current HTML page. If I marked it up, use the marks as guidance. Keep the answer short-first.";
-    if (intent === "tasks") return "Extract action items from the current HTML page and my marks. Group by owner, due date, and uncertainty.";
-    if (intent === "email") return "Draft a concise email from the current HTML page and my marks. Do not send it.";
-    if (intent === "workpaper") return "Turn the current HTML page and my marks into a workpaper-ready note: facts, evidence, open items, and risks.";
     if (intent === "redline") return "Suggest one concise, non-destructive replacement for the marked page content, or one concise rationale if replacement is inappropriate. Anchor the suggestion in the marked content. Do not modify the page.";
     return "";
   }
@@ -1559,6 +1567,7 @@
       if (xhr.status < 200 || xhr.status >= 300) {
         var errorText = "";
         try { errorText = JSON.parse(xhr.responseText).error || ""; } catch (error) {}
+        if (xhr.status === 409 && /uncertain/i.test(errorText)) errorText += " Tap Clear to start over; Pen still works.";
         finishError(errorText);
         return;
       }
@@ -1622,9 +1631,7 @@
   add(hermesToggleBtn, "click", function () { toggleMenu("hermes", hermesToolsEl, hermesToggleBtn); });
   add(moreToggleBtn, "click", function () { toggleMenu("more", moreToolsEl, moreToggleBtn); });
   add(drawModeBtn, "click", function () { if (handMode) { setHandMode(false); setDrawMode(true); return; } setDrawMode(!drawMode); });
-  add(sendInkBtn, "click", function () { sendInkToHermes(""); });
   add(liveSendBtn, "click", function () { sendInkToHermes(""); });
-  add(liveHistoryBtn, "click", openHistory);
   add(liveHistoryCloseBtn, "click", function () { liveHistoryEl.hidden = true; });
   add(liveNewBtn, "click", newPage);
   add(liveThemeBtn, "click", toggleTheme);
