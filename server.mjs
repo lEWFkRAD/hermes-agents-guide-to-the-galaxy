@@ -279,6 +279,41 @@ function logSend(event) {
   console.log(line);
 }
 
+// Same-key events log at most once a minute so a misconfigured device that
+// polls every few seconds leaves evidence without flooding the log.
+const rateLimitedLogAt = new Map();
+function logRateLimited(key, event, intervalMs = 60_000) {
+  const now = Date.now();
+  if (now - (rateLimitedLogAt.get(key) || 0) < intervalMs) return;
+  rateLimitedLogAt.set(key, now);
+  logSend(event);
+}
+
+function shortUserAgent(req) {
+  return String(req.headers["user-agent"] || "").slice(0, 160);
+}
+
+// Device-side diagnostics from the live page: taps, errors, sync failures.
+// Stored in the bridge log only; strings are clipped and nothing is echoed.
+async function handleLiveClientLog(req, res) {
+  if (req.method !== "POST") {
+    send(res, 405, JSON.stringify({ ok: false, error: "Method not allowed" }), "application/json; charset=utf-8", { allow: "POST" });
+    return;
+  }
+  try {
+    const body = JSON.parse(await readBody(req, 8_000) || "{}");
+    const events = (Array.isArray(body.events) ? body.events : []).slice(0, 40).map((event) => ({
+      t: Number(event?.t) || 0,
+      e: String(event?.e || "").slice(0, 40),
+      d: String(event?.d || "").slice(0, 300)
+    }));
+    logSend({ kind: "live-client", build: String(body.build || "").slice(0, 32), ua: shortUserAgent(req), events });
+    send(res, 204, "");
+  } catch (error) {
+    send(res, 400, JSON.stringify({ ok: false, error: "Bad client log" }));
+  }
+}
+
 function send(res, status, body, type = "application/json; charset=utf-8", extraHeaders = {}) {
   res.writeHead(status, {
     "content-type": type,
@@ -911,7 +946,7 @@ async function handleLivePageInkApi(req, res) {
       });
     } catch (error) {
       const status = Number(error.status) || (error.message === "Request too large" ? 413 : (error instanceof SyntaxError ? 400 : 500));
-      if (status >= 500) logSend({ kind: "live-ink-sync", ok: false, error: error.message });
+      logSend({ kind: "live-ink-sync", ok: false, status, error: error.message });
       send(res, status, JSON.stringify({ ok: false, error: error.message }));
     }
     return;
@@ -1468,6 +1503,7 @@ async function handleHttpRequest(req, res) {
   const protectedPath = requestPath.startsWith("/api/") || requestPath.startsWith("/img/");
   const localLivePublish = requestPath === "/api/live-page" && req.method === "PUT" && livePageWriteOk(req);
   if (protectedPath && !requestAuth.protectedRequestOk(req) && !localLivePublish) {
+    logRateLimited(`auth-reject:${requestPath}`, { kind: "auth-reject", method: req.method, path: requestPath, ua: shortUserAgent(req) });
     send(res, 401, JSON.stringify({ ok: false, error: "unauthorized - use a configured diary credential" }));
     return;
   }
@@ -1485,6 +1521,10 @@ async function handleHttpRequest(req, res) {
   }
   if (requestPath === "/api/live-page/ink") {
     await handleLivePageInkApi(req, res);
+    return;
+  }
+  if (requestPath === "/api/live-page/client-log") {
+    await handleLiveClientLog(req, res);
     return;
   }
   if (requestPath === "/api/live-page/journey" || requestPath === "/api/live-page/journey/content") {
