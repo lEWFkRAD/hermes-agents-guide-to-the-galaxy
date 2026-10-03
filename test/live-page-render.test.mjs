@@ -31,7 +31,7 @@ test("live ink uses the same smooth curve for display and Hermes export", async 
 test("live shell cache-busts the current renderer and Journey assets", async () => {
   const html = await fs.readFile(path.join(repoRoot, "public", "live.html"), "utf8");
   assert.match(html, /live\.css\?v=19/);
-  assert.match(html, /live\.js\?v=36/);
+  assert.match(html, /live\.js\?v=37/);
   assert.match(html, /class="labeledTool"/);
   assert.match(html, /id="hermesToggleBtn"/);
   assert.match(html, /id="moreToggleBtn"/);
@@ -98,7 +98,7 @@ test("an unconfirmed Send never locks the pen", async () => {
   const source = await fs.readFile(path.join(repoRoot, "public", "live.js"), "utf8");
   const startInk = source.slice(source.indexOf("function startInk"), source.indexOf("function appendInkPoint"));
 
-  assert.match(startInk, /if \(!drawMode \|\| sendBusy\) return true;/);
+  assert.match(startInk, /if \(!drawMode \|\| sendBusy\) \{/);
   assert.doesNotMatch(startInk, /pendingInkSend/);
   assert.match(source, /drawModeBtn\.disabled = sendBusy;/);
   assert.match(source, /Tap Clear to start over; Pen still works\./);
@@ -302,6 +302,29 @@ test("Kindle view: one-tap clear with undo, hand tool, zoom and four-way pan", a
   assert.match(source, /var rect = canvasEl\.getBoundingClientRect\(\);/);
   assert.match(source, /var ZOOM_STEPS = \[0\.5, 0\.75, 1, 1\.5, 2, 3\]/);
   // Regression (2026-10-02): the top-bar Pen must take the pen back from Hand mode.
-  const penHandler = source.slice(source.indexOf('add(annotationToggleBtn, "click"'), source.indexOf('add(hermesToggleBtn, "click"'));
+  const penHandler = source.slice(source.indexOf('addTap(annotationToggleBtn, function'), source.indexOf('addTap(hermesToggleBtn, function'));
   assert.match(penHandler, /if \(handMode\) \{ setHandMode\(false\); setDrawMode\(true\); return; \}/);
+});
+
+test("toolbar buttons act on the touch release, not only on a synthesized click", async () => {
+  const source = await fs.readFile(path.join(repoRoot, "public", "live.js"), "utf8");
+
+  for (const id of ["annotationToggleBtn", "handToggleBtn", "drawModeBtn", "hermesToggleBtn", "moreToggleBtn", "liveSendBtn"]) {
+    assert.match(source, new RegExp(`addTap\\(${id}, function`));
+    assert.doesNotMatch(source, new RegExp(`add\\(${id}, "click"`));
+  }
+  assert.match(source, /add\(element, "pointerup", up\);/);
+  assert.match(source, /if \(\(new Date\(\)\)\.getTime\(\) - firedAt < 800\) return;/);
+});
+
+test("the live page reports device diagnostics and the bridge logs rejected requests", async () => {
+  const source = await fs.readFile(path.join(repoRoot, "public", "live.js"), "utf8");
+  const server = await fs.readFile(path.join(repoRoot, "server.mjs"), "utf8");
+
+  assert.match(source, /"\/api\/live-page\/client-log"/);
+  assert.match(source, /diag\("ink-refused"/);
+  assert.match(source, /diag\("ink-sync-fail"/);
+  assert.match(server, /requestPath === "\/api\/live-page\/client-log"/);
+  assert.match(server, /kind: "auth-reject"/);
+  assert.match(server, /logSend\(\{ kind: "live-ink-sync", ok: false, status,/);
 });

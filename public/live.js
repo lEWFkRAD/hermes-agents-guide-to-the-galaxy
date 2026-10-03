@@ -57,6 +57,72 @@
     else element.innerText = text;
   }
 
+  // Device diagnostics: a few small events (load, taps, refused strokes, sync
+  // failures, script errors) posted to the bridge log so a misbehaving Kindle
+  // leaves evidence. Fire-and-forget; never blocks or alters the UI.
+  var diagQueue = [], diagTimer = null, diagRefusedAt = 0;
+  function diag(name, detail) {
+    try {
+      diagQueue.push({ t: (new Date()).getTime(), e: name, d: String(detail == null ? "" : detail).slice(0, 300) });
+      if (diagQueue.length > 40) diagQueue.shift();
+      if (!diagTimer) diagTimer = window.setTimeout(flushDiag, 2000);
+    } catch (error) {}
+  }
+  function flushDiag() {
+    diagTimer = null;
+    if (!diagQueue.length) return;
+    var batch = diagQueue;
+    diagQueue = [];
+    try {
+      var xhr = new XMLHttpRequest();
+      xhr.open("POST", "/api/live-page/client-log", true);
+      xhr.setRequestHeader("content-type", "application/json");
+      setAuth(xhr);
+      xhr.send(JSON.stringify({ build: clientBuild || "", events: batch }));
+    } catch (error) {}
+  }
+  window.onerror = function (message, source, line, column) {
+    diag("error", message + " @" + line + ":" + column);
+  };
+
+  // Toolbar buttons act on the touch/pen release itself. Old touch browsers
+  // (and Chrome right after an ink stroke) can drop the synthesized click, which
+  // made Pen look dead. The click that may follow is ignored as a duplicate;
+  // keyboard and mouse clicks without a pointer sequence still work.
+  function addTap(element, handler) {
+    if (!element) return;
+    var downOnButton = false, firedAt = 0;
+    function fire(event, how) {
+      // Only a touch/pen release arms the duplicate-click filter; real
+      // clicks (mouse, keyboard) never suppress each other.
+      if (how !== "click") firedAt = (new Date()).getTime();
+      handler(event);
+      diag("tap", (element.id || "button") + " via " + how + " draw=" + drawMode + " hand=" + handMode + " tools=" + toolsOpen);
+    }
+    function down() { downOnButton = true; }
+    function up(event) {
+      if (!downOnButton) return;
+      downOnButton = false;
+      if (element.disabled) return;
+      if (event && event.pointerType === "mouse") return;
+      fire(event, event && event.type);
+    }
+    function cancel() { downOnButton = false; }
+    if (window.PointerEvent) {
+      add(element, "pointerdown", down);
+      add(element, "pointerup", up);
+      add(element, "pointercancel", cancel);
+    } else if ("ontouchstart" in window) {
+      add(element, "touchstart", down);
+      add(element, "touchend", up);
+      add(element, "touchcancel", cancel);
+    }
+    add(element, "click", function (event) {
+      if ((new Date()).getTime() - firedAt < 800) return;
+      fire(event, "click");
+    });
+  }
+
   function stopEvent(event) {
     if (event.preventDefault) event.preventDefault();
     if (event.stopPropagation) event.stopPropagation();
@@ -613,6 +679,7 @@
           return;
         } catch (error) {}
       }
+      diag("ink-sync-fail", "status=" + xhr.status + " ops=" + pending.length);
       if (xhr.status === 400 || xhr.status === 409 || xhr.status === 413) {
         if (pending.length > 1) {
           inkBatchLimit = Math.max(1, Math.floor(pending.length / 2));
@@ -917,7 +984,11 @@
 
   function startInk(event) {
     if (handMode) return startPan(event);
-    if (!drawMode || sendBusy) return true;
+    if (!drawMode || sendBusy) {
+      var refusedNow = (new Date()).getTime();
+      if (refusedNow - diagRefusedAt > 5000) { diagRefusedAt = refusedNow; diag("ink-refused", "draw=" + drawMode + " busy=" + sendBusy); }
+      return true;
+    }
     emptyHintDismissed = true;
     if (emptyHintEl) emptyHintEl.hidden = true;
     // Fast pen input can deliver the next down before the previous up is
@@ -1617,19 +1688,20 @@
   }
 
   bindInkEvents(canvasEl);
+  diag("load", "pe=" + !!window.PointerEvent + " touch=" + ("ontouchstart" in window) + " vw=" + window.innerWidth + "x" + window.innerHeight + " dpr=" + (window.devicePixelRatio || 1));
   add(window, "resize", resizeCanvas);
   add(frameEl, "load", hideMessage);
-  add(annotationToggleBtn, "click", function () {
+  addTap(annotationToggleBtn, function () {
     closeMenus("pen");
     // Pen while Hand is on = "give me the pen back": exit Hand, draw, no drawer toggle.
     if (handMode) { setHandMode(false); setDrawMode(true); return; }
     if (!drawMode) setDrawMode(true);
     setToolsOpen(!toolsOpen);
   });
-  add(hermesToggleBtn, "click", function () { toggleMenu("hermes", hermesToolsEl, hermesToggleBtn); });
-  add(moreToggleBtn, "click", function () { toggleMenu("more", moreToolsEl, moreToggleBtn); });
-  add(drawModeBtn, "click", function () { if (handMode) { setHandMode(false); setDrawMode(true); return; } setDrawMode(!drawMode); });
-  add(liveSendBtn, "click", function () { sendInkToHermes(""); });
+  addTap(hermesToggleBtn, function () { toggleMenu("hermes", hermesToolsEl, hermesToggleBtn); });
+  addTap(moreToggleBtn, function () { toggleMenu("more", moreToolsEl, moreToggleBtn); });
+  addTap(drawModeBtn, function () { if (handMode) { setHandMode(false); setDrawMode(true); return; } setDrawMode(!drawMode); });
+  addTap(liveSendBtn, function () { sendInkToHermes(""); });
   add(liveHistoryCloseBtn, "click", function () { liveHistoryEl.hidden = true; });
   add(liveNewBtn, "click", newPage);
   add(liveThemeBtn, "click", toggleTheme);
@@ -1655,7 +1727,7 @@
   add(undoInkBtn, "click", undoInk);
   add(clearInkBtn, "click", function () { closeMenus(""); requestClear(); });
   add(quickClearBtn, "click", requestClear);
-  add(handToggleBtn, "click", function () { closeMenus(""); setHandMode(!handMode); });
+  addTap(handToggleBtn, function () { closeMenus(""); setHandMode(!handMode); });
   add(zoomInBtn, "click", function () { stepZoom(1); });
   add(zoomOutBtn, "click", function () { stepZoom(-1); });
   add(zoomFitBtn, "click", resetView);
