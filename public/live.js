@@ -847,8 +847,9 @@
 
   function resizeCanvas() {
     var rect = surfaceEl.getBoundingClientRect();
+    var tall = stageEl && stageEl.offsetHeight > rect.height ? stageEl.offsetHeight : rect.height;
     canvasEl.width = Math.max(1, Math.round(rect.width));
-    canvasEl.height = Math.max(1, Math.round(rect.height));
+    canvasEl.height = Math.max(1, Math.round(tall));
     redrawInk();
   }
 
@@ -1154,9 +1155,38 @@
     var rect = surfaceEl.getBoundingClientRect();
     return { w: Math.max(1, rect.width), h: Math.max(1, rect.height) };
   }
+  // Tall pages (2026-10-04): the stage is as tall as the whole document, so Hand,
+  // the arrows and the ink all share one full-page coordinate space. Before this
+  // the stage was one screen tall and every pan clamped to zero at 100%.
+  var pageHeight = 0;
+  function pageSize() {
+    var size = surfaceSize();
+    return { w: size.w, h: Math.max(size.h, pageHeight || 0) };
+  }
+  function documentHeight() {
+    try {
+      var doc = frameEl.contentDocument || (frameEl.contentWindow && frameEl.contentWindow.document);
+      if (!doc || !doc.documentElement) return 0;
+      return Math.max(Number(doc.documentElement.scrollHeight) || 0, doc.body ? Number(doc.body.scrollHeight) || 0 : 0);
+    } catch (error) {
+      return 0;
+    }
+  }
+  function fitStageToPage(remeasure) {
+    if (!stageEl) return;
+    var size = surfaceSize();
+    if (remeasure) { stageEl.style.height = size.h + "px"; stageEl.style.bottom = "auto"; }
+    var height = Math.max(size.h, Math.ceil(documentHeight()));
+    if (!remeasure && Math.abs(height - pageHeight) < 2) return;
+    pageHeight = height;
+    stageEl.style.bottom = "auto";
+    stageEl.style.height = height + "px";
+    resizeCanvas();
+    applyView();
+  }
   function clampView() {
     var size = surfaceSize();
-    var spareX = size.w - size.w * viewZoom, spareY = size.h - size.h * viewZoom;
+    var spareX = size.w - size.w * viewZoom, spareY = size.h - pageSize().h * viewZoom;
     viewX = Math.max(Math.min(0, spareX), Math.min(Math.max(0, spareX), viewX));
     viewY = Math.max(Math.min(0, spareY), Math.min(Math.max(0, spareY), viewY));
   }
@@ -1188,7 +1218,7 @@
   function resetView() { viewZoom = 1; viewX = 0; viewY = 0; applyView(); }
   function panBy(dx, dy) { viewX += dx; viewY += dy; applyView(); }
   function panStep(direction) {
-    var size = surfaceSize(), stepX = size.w * 0.4, stepY = size.h * 0.4;
+    var size = surfaceSize(), stepX = size.w * 0.4, stepY = size.h * 0.85;
     if (direction === "up") panBy(0, stepY);
     else if (direction === "down") panBy(0, -stepY);
     else if (direction === "left") panBy(stepX, 0);
@@ -1230,6 +1260,16 @@
   function endPan(event) {
     if (panApplyTimer) { window.clearTimeout(panApplyTimer); panApplyTimer = null; }
     if (event && (typeof event.clientX === "number" || (event.changedTouches && event.changedTouches[0]))) trackPan(event);
+    if (panStart && event) {
+      var endPoint = eventPoint(event);
+      if (Math.abs(endPoint.x - panStart.x) < 10 && Math.abs(endPoint.y - panStart.y) < 10) {
+        var rect = surfaceEl.getBoundingClientRect();
+        var rel = (endPoint.y - rect.top) / Math.max(1, rect.height);
+        viewX = panStart.viewX; viewY = panStart.viewY;
+        if (rel > 0.66) panStep("down");
+        else if (rel < 0.34) panStep("up");
+      }
+    }
     panning = false;
     panStart = null;
     applyView();
@@ -1496,6 +1536,7 @@
       redrawInk();
       saveInk();
     }
+    if (changedRevision) { viewZoom = 1; viewX = 0; viewY = 0; }
     revision = page.revision;
     setText(stateEl, formatUpdated(page));
     document.title = (page.title || "HTML") + " · Hermes";
@@ -1691,6 +1732,11 @@
   diag("load", "pe=" + !!window.PointerEvent + " touch=" + ("ontouchstart" in window) + " vw=" + window.innerWidth + "x" + window.innerHeight + " dpr=" + (window.devicePixelRatio || 1));
   add(window, "resize", resizeCanvas);
   add(frameEl, "load", hideMessage);
+  add(frameEl, "load", function () {
+    fitStageToPage(true);
+    window.setTimeout(function () { fitStageToPage(false); }, 700);
+  });
+  add(window, "resize", function () { fitStageToPage(true); });
   addTap(annotationToggleBtn, function () {
     closeMenus("pen");
     // Pen while Hand is on = "give me the pen back": exit Hand, draw, no drawer toggle.
@@ -1734,14 +1780,13 @@
   var panBtns = viewDockEl && viewDockEl.getElementsByTagName ? viewDockEl.getElementsByTagName("button") : [];
   for (var panIndex = 0; panIndex < panBtns.length; panIndex += 1) {
     if (!panBtns[panIndex].getAttribute("data-pan")) continue;
-    add(panBtns[panIndex], "click", function (event) {
-      var button = event.currentTarget || event.srcElement;
-      panStep(button.getAttribute("data-pan"));
-    });
+    (function (button) {
+      addTap(button, function () { panStep(button.getAttribute("data-pan")); });
+    }(panBtns[panIndex]));
   }
   add(surfaceEl, "wheel", function (event) {
     if (event.ctrlKey) { stepZoom(event.deltaY < 0 ? 1 : -1); return stopEvent(event); }
-    if (handMode || !viewIsDefault()) { panBy(-(event.deltaX || 0), -(event.deltaY || 0)); return stopEvent(event); }
+    if (handMode || !viewIsDefault() || pageSize().h > surfaceSize().h + 2) { panBy(-(event.deltaX || 0), -(event.deltaY || 0)); return stopEvent(event); }
     return true;
   });
   add(window, "resize", applyView);
