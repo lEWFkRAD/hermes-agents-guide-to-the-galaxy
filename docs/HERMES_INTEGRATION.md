@@ -21,7 +21,7 @@ From the repository root:
 ```text
 git clone --no-checkout https://github.com/NousResearch/hermes-agent.git .hermes-agent
 git -C .hermes-agent checkout --detach 03fa32c92dd445eb64c7f67434dd91b32c40701d
-python -m pip install --upgrade pip==26.1.2
+python -m pip install --upgrade pip==26.2.1
 python -m pip install --requirement requirements-dev.txt
 python -m pip install -e .hermes-agent
 ```

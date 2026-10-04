@@ -35,7 +35,7 @@ Instructions for human and AI contributors working in this repository.
 ```text
 npm ci --ignore-scripts
 npm run validate
-python -m pip install --upgrade pip==26.1.2
+python -m pip install --upgrade pip==26.2.1
 python -m pip install --requirement requirements-dev.txt
 python -m pip install -e .hermes-agent
 python -m pytest test/kindle-plugin test/ci -q
