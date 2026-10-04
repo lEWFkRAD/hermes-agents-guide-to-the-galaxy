@@ -38,6 +38,7 @@ npm run validate
 python -m pip install --upgrade pip==26.2.1
 python -m pip install --requirement requirements-dev.txt
 python -m pip install -e .hermes-agent
+python -m pip install "PyJWT[crypto]==2.15.0"
 python -m pytest test/kindle-plugin test/ci -q
 node --check server.mjs
 node --check public/live.js

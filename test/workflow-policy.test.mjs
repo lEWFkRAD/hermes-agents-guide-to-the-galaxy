@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import test from "node:test";
 
-const HERMES_SHA = "03fa32c92dd445eb64c7f67434dd91b32c40701d";
+const HERMES_SHA = "fdcae6debac4ad33adc449a4263433b389b563ef";
 
 async function workflow(name) {
   return (await fs.readFile(`.github/workflows/${name}`, "utf8")).replace(/\r\n?/g, "\n");
@@ -66,17 +66,21 @@ test("workflows bound concurrency, runtime, and token exposure", async () => {
   assert.equal((release.match(/^\s+timeout-minutes:/gm) || []).length, 1);
 });
 
-test("CI scopes expiring audit exceptions and release permits none", async () => {
+test("CI audits the installed Hermes environment and no workflow ignores advisories", async () => {
   const ci = await workflow("ci.yml");
   const release = await workflow("release.yml");
   assert.equal((ci.match(/python scripts\/audit_hermes_environment\.py/g) || []).length, 2);
   assert.match(ci, /python -m pip_audit --requirement requirements-dev\.txt/);
-  assert.match(ci, /--upgrade pip==26\.1\.2/);
+  assert.match(ci, /--upgrade pip==26\.2\.1/);
 
   assert.match(release, /python -m pip_audit --requirement requirements-dev\.txt/);
   assert.match(release, /^\s*- run: python -m pip_audit\s*$/m);
-  assert.match(release, /--upgrade pip==26\.1\.2/);
+  assert.match(release, /--upgrade pip==26\.2\.1/);
   assert.doesNotMatch(release, /audit_hermes_environment|--ignore-vuln/);
+  assert.doesNotMatch(ci, /--ignore-vuln/);
+  for (const source of [ci, release]) {
+    assert.match(source, /-e \.hermes-agent\s*\n\s*- run: python -m pip install --disable-pip-version-check "PyJWT\[crypto\]==2\.15\.0"/);
+  }
 });
 
 test("release publishes both checked and attested archive layouts", async () => {

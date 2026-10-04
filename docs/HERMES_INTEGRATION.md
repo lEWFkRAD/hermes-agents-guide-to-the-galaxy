@@ -5,9 +5,9 @@ The merge-gating adapter tests use this exact reviewed Hermes Agent commit:
 | Field | Value |
 | --- | --- |
 | Repository | `NousResearch/hermes-agent` |
-| Commit | `03fa32c92dd445eb64c7f67434dd91b32c40701d` |
+| Commit | `fdcae6debac4ad33adc449a4263433b389b563ef` |
 | Upstream branch at review | `main` |
-| Reviewed | 2026-08-10 |
+| Reviewed | 2026-10-04 |
 
 This is a compatibility pin, not a floating branch or a release claim. The
 commit contains the current profile secret-scope and platform-plugin contracts
@@ -20,7 +20,7 @@ From the repository root:
 
 ```text
 git clone --no-checkout https://github.com/NousResearch/hermes-agent.git .hermes-agent
-git -C .hermes-agent checkout --detach 03fa32c92dd445eb64c7f67434dd91b32c40701d
+git -C .hermes-agent checkout --detach fdcae6debac4ad33adc449a4263433b389b563ef
 python -m pip install --upgrade pip==26.2.1
 python -m pip install --requirement requirements-dev.txt
 python -m pip install -e .hermes-agent
@@ -50,25 +50,15 @@ Update it only in a dedicated pull request:
 Review the pin when Hermes changes its plugin/profile contracts, when the
 current commit is affected by a security advisory, and before each release.
 
-## Temporary CI-only audit exception
+## Test-host dependency override
 
-The reviewed Hermes commit pins `cryptography==48.0.1` for its broader test
-environment. That upstream-only test-host dependency currently has three known
-advisories:
+The reviewed Hermes commit pins `PyJWT[crypto]==2.13.0`, which has known
+advisories fixed in 2.14.0 and 2.15.0 (PYSEC-2026-4140 through 4152). The
+Kindle adapter does not use PyJWT. CI installs `PyJWT[crypto]==2.15.0` after
+Hermes, so the installed environment audits clean without any ignore list. pip
+reports the version conflict with the Hermes pin; that is expected. Drop the
+override when a reviewed Hermes pin ships PyJWT 2.14.0 or newer.
 
-| pip-audit ID | Aliases | Severity | Affected operation | Fixed in |
-| --- | --- | --- | --- | --- |
-| `PYSEC-2026-3552` | [`CVE-2026-69247` / `GHSA-g6cj-pr64-35w5`](https://github.com/advisories/GHSA-g6cj-pr64-35w5) | High (8.2) | PKCS#7 `EnvelopedData` decryption can expose a Bleichenbacher oracle through distinguishable errors and timing. | `cryptography` 50.0.0 |
-| `PYSEC-2026-3553` | [`CVE-2026-69249` / `GHSA-jwv3-5hgf-82ww`](https://github.com/advisories/GHSA-jwv3-5hgf-82ww) | High (8.7) | Duplicate self-signed intermediates can cause exponential X.509 path-building and resource exhaustion. | `cryptography` 49.0.0 |
-| `PYSEC-2026-3554` | [`CVE-2026-69248` / `GHSA-m2h6-j472-rp4c`](https://github.com/advisories/GHSA-m2h6-j472-rp4c) | Moderate (6.9) | Wildcard DNS names can escape an intermediate CA's `permittedSubtrees` constraint and make the X.509 verifier accept an invalid chain. | `cryptography` 49.0.0 |
-
-The Kindle adapter and its integration tests do not call PKCS#7 decryption or
-the `cryptography` X.509 verifier. Merge-gating CI therefore has a narrow
-exception for exactly these three IDs while continuing to audit every other
-auditable installed dependency. The exception expires at 2026-09-10 00:00 UTC and the
-audit fails closed on or after that instant.
-
-This exception does **not** declare the affected dependency safe for
-production. The Release workflow applies no ignores and must pass a complete
-installed-environment audit, so publishing remains blocked until a reviewed
-Hermes pin resolves all three advisories.
+The former CI-only `cryptography` exceptions (PYSEC-2026-3552/3553/3554)
+expired on 2026-09-10 and are retired: this Hermes commit ships
+`cryptography` 50.0.1. Neither CI nor Release ignores any advisory.

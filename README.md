@@ -59,7 +59,7 @@ The currently supported host baseline is intentionally conservative:
   and tests also run on Linux; the included Task Scheduler, `.cmd`, PowerShell,
   and VBScript helpers are Windows-only and optional.
 - **Hermes Agent:** compatibility is merge-gated against exact upstream commit
-  `03fa32c92dd445eb64c7f67434dd91b32c40701d`. See
+  `fdcae6debac4ad33adc449a4263433b389b563ef`. See
   [the pin and update policy](docs/HERMES_INTEGRATION.md). Configure the Gateway
   and enable the installed `kindle-scribe` plugin.
 - **Devices:** a stock Kindle Scribe using its built-in browser is the validated
