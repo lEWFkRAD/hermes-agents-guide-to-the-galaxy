@@ -88,7 +88,7 @@ test("direct Python development requirements are exact pins", async () => {
       `requirements-dev.txt must pin ${required}`,
     );
   }
-  assert.ok(requirements.includes("pip==26.1.2"), "CI bootstrap pip pin must be reviewed explicitly");
+  assert.ok(requirements.includes("pip==26.2.1"), "CI bootstrap pip pin must be reviewed explicitly");
 });
 
 test("release ancestry dereferences a tag and accepts a main ancestor", () => {
