@@ -62,8 +62,10 @@ end
 local function probe_base()
     if BASE then return BASE end
     for _, b in ipairs({ TS_BASE, LAN_BASE }) do
+        -- any HTTP response (even 404/401) proves the bridge is listening;
+        -- only curl failure / "000" means unreachable
         local out = curl({ "-o /dev/null -w '%{http_code}' '" .. b .. "/deck'" }, 5)
-        if out and out:find("200") then
+        if out and out:match("^%d%d%d$") and out ~= "000" then
             BASE = b
             return b
         end
