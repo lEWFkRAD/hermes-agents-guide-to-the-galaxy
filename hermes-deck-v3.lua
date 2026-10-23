@@ -36,6 +36,7 @@ local DateTime = require("datetime")
 local DECK = WidgetContainer:extend{
     name = "hermes_deck",
     is_doc_only = false,
+    _APPS = nil,  -- populated below; exposed for the test harness
 }
 
 local TS_BASE = "http://100.114.202.27:8791"
@@ -192,6 +193,7 @@ local APPS = {
     { label = "System",      sub = "stock KOReader",    action = function() DECK:closeDeck() end },
     { label = "Reboot",      sub = "clean power off",   action = reboot_action },
 }
+DECK._APPS = APPS
 
 function DECK:heroCard(w)
     local ok, ReadHistory = pcall(require, "readhistory")
@@ -283,7 +285,7 @@ end
 
 function DECK:showDeck()
     if self._view then return end
-    local W = Screen:getWidth()
+    local W = Screen:getWidth()  -- noqa: shadows nothing; width in px
     local margin = Screen:scaleBySize(18)
     local inner_w = W - margin * 2
 
