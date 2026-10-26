@@ -49,10 +49,10 @@ jobs:
           node scripts/verify-release-tag.mjs --tag "${{ github.ref_name }}" --event-sha "${{ github.sha }}"
           if ($LASTEXITCODE -ne 0) { throw "Release tag identity validation failed" }
       - run: npm ci --ignore-scripts
-      - run: python -m pip install --disable-pip-version-check --upgrade pip==26.2.1
+      - run: python -m pip install --disable-pip-version-check --upgrade pip==26.2.2
       - run: python -m pip install --disable-pip-version-check --requirement requirements-dev.txt
       - run: python -m pip install --disable-pip-version-check -e .hermes-agent
-      - run: python -m pip install --disable-pip-version-check "PyJWT[crypto]==2.15.0"
+      - run: python -m pip install --disable-pip-version-check "PyJWT[crypto]==2.15.0" "pillow>=13,<14" "certifi>=2026.10.19"
       - run: npm run validate
       - run: python -m pytest test/kindle-plugin test/ci -q
       - run: python -m compileall -q kindle-plugin scripts test/kindle-plugin test/ci

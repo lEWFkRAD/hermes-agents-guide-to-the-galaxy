@@ -58,7 +58,7 @@ jobs:
           python-version: "3.14"
           cache: pip
           cache-dependency-path: requirements-dev.txt
-      - run: python -m pip install --disable-pip-version-check --upgrade pip==26.2.1
+      - run: python -m pip install --disable-pip-version-check --upgrade pip==26.2.2
       - run: python -m pip install --disable-pip-version-check --requirement requirements-dev.txt
       - run: python -m pip install --disable-pip-version-check -e .hermes-agent
       - run: python -m pip install --disable-pip-version-check "PyJWT[crypto]==2.15.0" "pillow>=13,<14" "certifi>=2026.10.19"
@@ -90,7 +90,7 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-dev.txt
       - run: npm ci --ignore-scripts
-      - run: python -m pip install --disable-pip-version-check --upgrade pip==26.2.1
+      - run: python -m pip install --disable-pip-version-check --upgrade pip==26.2.2
       - run: python -m pip install --disable-pip-version-check --requirement requirements-dev.txt
       - run: python -m pip install --disable-pip-version-check -e .hermes-agent
       - run: python -m pip install --disable-pip-version-check "PyJWT[crypto]==2.15.0" "pillow>=13,<14" "certifi>=2026.10.19"
@@ -184,7 +184,7 @@ jobs:
           cache-dependency-path: requirements-dev.txt
       - run: npm ci --ignore-scripts
       - run: npm audit --omit=dev --audit-level=high
-      - run: python -m pip install --disable-pip-version-check --upgrade pip==26.2.1
+      - run: python -m pip install --disable-pip-version-check --upgrade pip==26.2.2
       - run: python -m pip install --disable-pip-version-check --requirement requirements-dev.txt
       - run: python -m pip install --disable-pip-version-check -e .hermes-agent
       - run: python -m pip install --disable-pip-version-check "PyJWT[crypto]==2.15.0" "pillow>=13,<14" "certifi>=2026.10.19"

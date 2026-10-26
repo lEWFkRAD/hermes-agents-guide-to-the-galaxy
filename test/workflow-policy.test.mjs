@@ -71,15 +71,15 @@ test("CI audits the installed Hermes environment and no workflow ignores advisor
   const release = await workflow("release.yml");
   assert.equal((ci.match(/python scripts\/audit_hermes_environment\.py/g) || []).length, 2);
   assert.match(ci, /python -m pip_audit --requirement requirements-dev\.txt/);
-  assert.match(ci, /--upgrade pip==26\.2\.1/);
+  assert.match(ci, /--upgrade pip==26.2.2/);
 
   assert.match(release, /python -m pip_audit --requirement requirements-dev\.txt/);
   assert.match(release, /^\s*- run: python -m pip_audit\s*$/m);
-  assert.match(release, /--upgrade pip==26\.2\.1/);
+  assert.match(release, /--upgrade pip==26.2.2/);
   assert.doesNotMatch(release, /audit_hermes_environment|--ignore-vuln/);
   assert.doesNotMatch(ci, /--ignore-vuln/);
   for (const source of [ci, release]) {
-    assert.match(source, /-e \.hermes-agent\s*\n\s*- run: python -m pip install --disable-pip-version-check "PyJWT\[crypto\]==2\.15\.0"/);
+    assert.match(source, /-e \.hermes-agent\s*\n\s*- run: python -m pip install --disable-pip-version-check "PyJWT\[crypto\]==2\.15\.0" "pillow>=13,<14" "certifi>=2026\.10\.19"/);
   }
 });
 
