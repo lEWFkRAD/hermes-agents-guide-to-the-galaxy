@@ -79,7 +79,7 @@ test("CI audits the installed Hermes environment and no workflow ignores advisor
   assert.doesNotMatch(release, /audit_hermes_environment|--ignore-vuln/);
   assert.doesNotMatch(ci, /--ignore-vuln/);
   for (const source of [ci, release]) {
-    assert.match(source, /-e \.hermes-agent\s*\n\s*- run: python -m pip install --disable-pip-version-check "PyJWT\\[crypto\\]==2\\.15\\.0" "pillow>=13,<14" "certifi>=2026\\.10\\.19"/);
+    assert.match(source, /-e \.hermes-agent\s*\n\s*- run: python -m pip install --disable-pip-version-check "PyJWT\[crypto\]==2\.15\.0" "pillow>=13,<14" "certifi>=2026\.10\.19"/);
   }
 });
 
