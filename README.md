@@ -1,3 +1,10 @@
+<!-- project-home:start -->
+**[Hermes Notebook project homepage](https://lewfkrad.github.io/hermes-agents-guide-to-the-galaxy/)** · [Documentation](https://github.com/lEWFkRAD/hermes-agents-guide-to-the-galaxy/blob/main/docs/USER_GUIDE.md)
+
+A handwriting-first companion that connects notebook pages to ordinary Hermes sessions and tools.
+
+<!-- project-home:end -->
+
 # Hermes Agents Guide to the Galaxy
 
 ![Hermes Notebook across handwriting-first tablets](docs/assets/hermes-notebook-hero.png)
