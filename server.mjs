@@ -663,14 +663,14 @@ function assertKindleNoteFits(text, rawText = false) {
   return outboundText;
 }
 
-async function callKindleChannel({ text, chatId, rawText = false }) {
+async function callKindleChannel({ text, chatId, rawText = false, verifiedOwner = "" }) {
   const outboundText = assertKindleNoteFits(text, rawText);
   const boundedChatId = String(chatId || "").trim();
   if (!boundedChatId || boundedChatId.length > 160) {
     throw new Error("Firm agent channel session identifier is invalid.");
   }
 
-  const expectedOwner = await verifyKindleAdapterIdentity();
+  const expectedOwner = verifiedOwner || await verifyKindleAdapterIdentity();
   let response;
   try {
     response = await fetchWithTimeout(kindleAdapterUrl, {
@@ -1338,12 +1338,25 @@ async function handleSend(req, res) {
         // Local pre-flight: a note that cannot leave this machine must be
         // released, not marked as an uncertain (possibly delivered) send.
         if (!ocrNeedsClarification) assertKindleNoteFits(noteText);
+        // The adapter must be reachable and verified before the claim is
+        // marked dispatched: nothing has left this machine yet, so a failure
+        // here releases the claim instead of leaving a permanent 409.
+        let verifiedOwner = "";
+        if (!ocrNeedsClarification) {
+          try {
+            verifiedOwner = await verifyKindleAdapterIdentity();
+          } catch (error) {
+            error.retryable = true;
+            throw error;
+          }
+        }
         if (liveInkClaimId && !ocrNeedsClarification) {
           await withLiveState(() => liveInkStore.markDispatched(liveInkClaimId));
         }
         result = ocrNeedsClarification ? { text: clarificationText } : await callKindleChannel({
           text: noteText,
           chatId: session.channelThreadId,
+          verifiedOwner,
           source: isLivePageSource ? "live-page" : "",
           baseRevision: livePageRevision,
           currentRevision: beforeLiveRevision
@@ -1352,11 +1365,16 @@ async function handleSend(req, res) {
       } catch (error) {
         if (liveInkClaimId) await withLiveState(() => liveInkStore.releaseSend(liveInkClaimId)).catch(() => {});
         logSend({ kind: "error", target: "hermes", channel: true, error: error.message });
+        const retryable = error.retryable === true;
         if (wantStream) {
-          res.write(RS + JSON.stringify({ error: error.message }));
+          res.write(RS + JSON.stringify(retryable
+            ? { error: error.message, retryable: true, inkPreserved: !!liveInkClaimId }
+            : { error: error.message }));
           res.end();
         } else {
-          send(res, 502, JSON.stringify({ ok: false, error: error.message }));
+          send(res, 502, JSON.stringify(retryable
+            ? { ok: false, error: error.message, retryable: true, inkPreserved: !!liveInkClaimId }
+            : { ok: false, error: error.message }));
         }
         return;
       }
