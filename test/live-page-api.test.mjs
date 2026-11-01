@@ -890,3 +890,99 @@ test("failed downstream delivery stays uncertain and does not dispatch on retry"
     await new Promise(resolve => adapter.close(resolve));
   }
 });
+
+test("a send while the adapter is down is released and succeeds once it is back", async () => {
+  let adapterUp = false;
+  let adapterCalls = 0;
+  let adapterIdentity;
+  const adapter = http.createServer((req, res) => {
+    if (req.method === "GET" && req.url === "/health") {
+      if (!adapterUp) {
+        req.socket.destroy();
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(adapterIdentity));
+      return;
+    }
+    adapterCalls += 1;
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ reply: "Delivered after the gateway came back." }));
+    });
+  });
+  await new Promise((resolve, reject) => {
+    adapter.once("error", reject);
+    adapter.listen(0, "127.0.0.1", resolve);
+  });
+  const adapterPort = adapter.address().port;
+  const server = await startServer({ kindleAdapterUrl: `http://127.0.0.1:${adapterPort}/ingest` });
+  adapterIdentity = server.adapterHealth;
+  try {
+    const pageResponse = await request(server.port, "/api/live-page", {
+      headers: { "x-diary-auth": "local-secret" }
+    });
+    const pageRevision = JSON.parse(pageResponse.body).page.revision;
+    const stroke = {
+      id: "stroke-adapter-down",
+      clientId: "device-a",
+      baseRevision: pageRevision,
+      createdAt: 1000,
+      surfaceWidth: 600,
+      surfaceHeight: 720,
+      sent: false,
+      anchors: [],
+      points: [{ x: 0.1, y: 0.2 }, { x: 0.2, y: 0.3 }]
+    };
+    const added = await request(server.port, "/api/live-page/ink", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-diary-auth": "local-secret"
+      },
+      body: JSON.stringify({
+        clientId: "device-a",
+        ops: [{ id: "op-add-adapter-down", type: "add", stroke }]
+      })
+    });
+    assert.equal(added.status, 200);
+
+    const sendRequest = sendId => request(server.port, "/api/send", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-diary-auth": "local-secret"
+      },
+      body: JSON.stringify({
+        target: "hermes",
+        text: "Use this annotation.",
+        intent: "redline",
+        source: "live-page",
+        livePageRevision: pageRevision,
+        liveInkSendId: sendId,
+        liveInkStrokeIds: ["stroke-adapter-down"],
+        hermesThreadId: "thread-adapter-down"
+      })
+    });
+
+    const down = await sendRequest("send-adapter-down");
+    assert.equal(down.status, 502);
+    const downJson = JSON.parse(down.body);
+    assert.equal(downJson.retryable, true);
+    assert.equal(downJson.inkPreserved, true);
+    assert.equal(adapterCalls, 0);
+    const released = JSON.parse(await fs.readFile(path.join(server.dataDir, "live-page-ink.json"), "utf8"));
+    assert.deepEqual(released.sends, []);
+    assert.equal(released.strokes[0].sent, false);
+
+    adapterUp = true;
+    const retry = await sendRequest("send-adapter-back");
+    assert.equal(retry.status, 200);
+    assert.equal(JSON.parse(retry.body).text, "Delivered after the gateway came back.");
+    assert.equal(adapterCalls, 1);
+  } finally {
+    await server.close();
+    await new Promise(resolve => adapter.close(resolve));
+  }
+});
