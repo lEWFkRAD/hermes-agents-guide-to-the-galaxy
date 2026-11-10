@@ -9,6 +9,7 @@ description: >
   agent, tools, and memory. The adapter exposes a localhost-only ingest server
   used by the companion diary bridge.
 author: Jeffrey Watts
+requires_hermes: ">=0.23"
 requires_env:
   - name: KINDLE_INGEST_TOKEN
     description: "Shared secret used between the diary bridge and Kindle adapter"
