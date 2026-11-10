@@ -489,16 +489,49 @@ def test_profile_scope_wins_over_primary_process_environment(
     assert adapter._user_id == "finance-scribe"
 
 
-def test_missing_multiplex_scope_never_falls_back_to_primary_env(
+def test_missing_multiplex_scope_builds_profile_scope_not_primary_env(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    _set_profile(monkeypatch, tmp_path / "finance", "finance")
+    # Stable gateways create platform adapters without a temporary
+    # construction scope. Construction must then use the active profile's
+    # own .env, never the primary process environment.
+    profile_home = tmp_path / "finance"
+    _set_profile(monkeypatch, profile_home, "finance")
+    _set_env(monkeypatch, KINDLE_INGEST_TOKEN="primary-A")
+    _write_profile_env(
+        profile_home,
+        {"KINDLE_INGEST_TOKEN": "scoped-B", "KINDLE_USER": "finance-scribe"},
+    )
+    set_multiplex_active(True)
+    try:
+        assert adapter_module._is_connected(PlatformConfig(enabled=True)) is True
+        adapter = KindleAdapter(PlatformConfig(enabled=True, token="", extra={}))
+    finally:
+        set_multiplex_active(False)
+
+    assert adapter._token == "scoped-B"
+    assert adapter._token != os.environ["KINDLE_INGEST_TOKEN"]
+    assert adapter._profile_name == "finance"
+    assert adapter._user_id == "finance-scribe"
+
+
+def test_missing_multiplex_scope_and_empty_profile_env_stays_fail_closed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Without a construction scope AND without a profile .env there is no
+    # token: readiness is false and the primary env is still never consulted.
+    profile_home = tmp_path / "finance"
+    _set_profile(monkeypatch, profile_home, "finance")
     _set_env(monkeypatch, KINDLE_INGEST_TOKEN="primary-A")
     set_multiplex_active(True)
+    try:
+        assert adapter_module._is_connected(PlatformConfig(enabled=True)) is False
+        adapter = KindleAdapter(PlatformConfig(enabled=True, token="", extra={}))
+    finally:
+        set_multiplex_active(False)
 
-    assert adapter_module._is_connected(PlatformConfig(enabled=True)) is False
-    with pytest.raises(KindleConfigurationError, match="without a profile secret scope"):
-        KindleAdapter(PlatformConfig(enabled=True, token="", extra={}))
+    assert adapter._token == ""
+    assert asyncio.run(adapter.connect()) is False
 
 
 def test_missing_scoped_token_and_false_insecure_are_not_ready(
@@ -899,7 +932,7 @@ def test_health_requires_auth_and_attests_actual_profile_owner_and_version(
                 assert body == {
                     "status": "ok",
                     "service": "kindle-scribe",
-                    "version": "0.2.0",
+                    "version": "0.2.1",
                     "profile": "finance",
                     "owner_fingerprint": adapter._owner_fingerprint,
                     "host": "127.0.0.1",

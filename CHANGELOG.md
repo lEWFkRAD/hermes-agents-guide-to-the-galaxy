@@ -3,6 +3,18 @@
 All notable changes to Hermes Notebook and its Kindle Scribe plugin are
 documented here. The project follows Semantic Versioning for repository tags.
 
+## [0.2.1] - Unreleased
+
+## Kindle plugin starts on stable gateways with profile multiplexing
+
+Stable Hermes gateways (0.23.0) create platform adapters without installing a
+temporary construction secret scope. With gateway multiplexing active, the
+kindle-scribe adapter refused to construct ("Kindle configuration was resolved
+without a profile secret scope") and the platform never started. The adapter
+now builds the active profile's own secret scope from its captured profile home
+at construction — the same per-profile source `refreshed()` uses — so
+construction stays profile-owned with no cross-profile fallback.
+
 ## [0.2.0] - Unreleased
 
 ## Delivery recovery and device revocation

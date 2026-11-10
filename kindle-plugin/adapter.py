@@ -32,7 +32,7 @@ from gateway.platforms.base import (
 
 logger = logging.getLogger(__name__)
 
-PLUGIN_VERSION = "0.2.0"
+PLUGIN_VERSION = "0.2.1"
 SERVICE_NAME = "kindle-scribe"
 DEFAULT_INGEST_HOST = "127.0.0.1"
 DEFAULT_INGEST_PORT = 8793
@@ -214,7 +214,11 @@ def _active_profile_name() -> str:
 
 
 def _capture_runtime_context() -> _RuntimeContext:
-    from agent.secret_scope import current_secret_scope, is_multiplex_active
+    from agent.secret_scope import (
+        build_profile_secret_scope,
+        current_secret_scope,
+        is_multiplex_active,
+    )
     from hermes_constants import get_hermes_home
 
     profile_name = _active_profile_name().strip().lower()
@@ -225,12 +229,21 @@ def _capture_runtime_context() -> _RuntimeContext:
     if not profile_home.is_absolute():
         raise KindleConfigurationError("active Hermes profile home must be absolute")
 
+    scope = current_secret_scope()
+    multiplex_active = is_multiplex_active()
+    if multiplex_active and scope is None:
+        # Stable gateways (e.g. 0.23.0) create platform adapters without a
+        # temporary construction secret scope. Build this profile's own scope
+        # from its captured home — the same source ``refreshed()`` uses — so
+        # construction stays profile-owned without cross-profile fallback.
+        scope = build_profile_secret_scope(profile_home)
+
     return _RuntimeContext(
         profile_name=profile_name,
         profile_home=profile_home,
         secrets=_ProfileSecrets(
-            current_secret_scope(),
-            is_multiplex_active(),
+            scope,
+            multiplex_active,
             profile_home,
         ),
     )

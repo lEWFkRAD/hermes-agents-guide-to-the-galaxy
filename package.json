@@ -1,6 +1,6 @@
 {
   "name": "hermes-diary",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A handwriting-first Kindle Scribe notebook bridge for Hermes.",
   "private": true,
   "license": "MIT",

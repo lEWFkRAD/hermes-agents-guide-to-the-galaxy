@@ -2,7 +2,7 @@ manifest_version: 1
 name: kindle-scribe
 label: Kindle Scribe
 kind: platform
-version: 0.2.0
+version: 0.2.1
 description: >
   Kindle Scribe gateway adapter for Hermes Agent. Bridges the handwriting
   notebook into the gateway as a platform so handwritten notes reach the full
