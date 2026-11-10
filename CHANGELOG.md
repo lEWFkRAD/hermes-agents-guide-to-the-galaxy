@@ -41,6 +41,10 @@ synthetic tests do not certify Kindle storage or e-ink behavior.
 
 ### Changed
 
+- Kindle plugin resolves the active profile through the public
+  `hermes_constants` helpers instead of `hermes_cli.profiles`, declares
+  `requires_hermes: ">=0.23"`, and ships its own README with a disclosure
+  section for the Hermes plugin catalog.
 - Aligned repository, plugin manifest, and runtime version metadata at `0.2.0`.
 - Migrated the plugin's credential prompt to Hermes's `password: true` manifest contract.
 

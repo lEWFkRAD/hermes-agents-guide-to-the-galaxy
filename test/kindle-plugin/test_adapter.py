@@ -110,11 +110,10 @@ def _set_profile(
     home: Path,
     name: str = "default",
 ) -> None:
-    import hermes_cli.profiles
     import hermes_constants
 
     home.mkdir(parents=True, exist_ok=True)
-    monkeypatch.setattr(hermes_cli.profiles, "get_active_profile_name", lambda: name)
+    monkeypatch.setattr(adapter_module, "_active_profile_name", lambda: name)
     monkeypatch.setattr(hermes_constants, "get_hermes_home", lambda: home)
 
 
@@ -595,7 +594,6 @@ def test_gateway_task_inherits_validated_profile_home_and_secret_scope(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     async def case() -> None:
-        import hermes_cli.profiles
         from agent.secret_scope import current_secret_scope, get_secret
         from hermes_constants import (
             get_hermes_home,
@@ -617,8 +615,8 @@ def test_gateway_task_inherits_validated_profile_home_and_secret_scope(
         monkeypatch.setenv("KINDLE_ALLOWED_USERS", "primary-user")
         monkeypatch.setenv("PROFILE_SENTINEL", "primary-leak")
         monkeypatch.setattr(
-            hermes_cli.profiles,
-            "get_active_profile_name",
+            adapter_module,
+            "_active_profile_name",
             lambda: "finance",
         )
 

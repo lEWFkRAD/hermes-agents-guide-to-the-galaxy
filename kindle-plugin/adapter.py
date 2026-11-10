@@ -207,12 +207,17 @@ class _ProfileSecrets:
         return {str(name): str(value) for name, value in self._scope.items()}
 
 
+def _active_profile_name() -> str:
+    from hermes_constants import get_hermes_home, profile_name_for_home
+
+    return str(profile_name_for_home(get_hermes_home()) or "custom")
+
+
 def _capture_runtime_context() -> _RuntimeContext:
     from agent.secret_scope import current_secret_scope, is_multiplex_active
-    from hermes_cli.profiles import get_active_profile_name
     from hermes_constants import get_hermes_home
 
-    profile_name = str(get_active_profile_name() or "default").strip().lower()
+    profile_name = _active_profile_name().strip().lower()
     if not _PROFILE_RE.fullmatch(profile_name):
         raise KindleConfigurationError("active Hermes profile name is invalid")
 
