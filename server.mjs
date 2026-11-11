@@ -546,7 +546,7 @@ async function callChat({ endpoint, model, token, text, imageDataUrl, mode, hist
 async function cleanHandwritingTranscription(rawText) {
   const response = await fetchWithTimeout(ocrCleanupEndpoint, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...(visionToken ? { authorization: `Bearer ${visionToken}` } : {}) },
     body: JSON.stringify({
       model: ocrCleanupModel,
       temperature: 0,
@@ -717,7 +717,7 @@ async function reconcileHandwritingReadings(readings) {
   }
   const response = await fetch(ocrCleanupEndpoint, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...(visionToken ? { authorization: `Bearer ${visionToken}` } : {}) },
     body: JSON.stringify({
       model: ocrCleanupModel,
       temperature: 0,
