@@ -415,3 +415,7 @@ access; none grants the private Live Page publisher capability. Never commit key
 Physical acceptance remains pending: stock Kindle sleep/wake, airplane-mode
 reconnect, browser reload, lost server response, and ink restoration. Desktop
 synthetic tests do not certify Kindle storage or e-ink behavior.
+
+## Related projects
+
+This is the parent project. The KOReader Hermes Deck plugin lives in [koreader-hermes-deck](https://github.com/lEWFkRAD/koreader-hermes-deck) — a native Kindle Scribe client for the same notebook bridge.
